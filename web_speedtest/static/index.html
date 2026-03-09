@@ -56,6 +56,29 @@
     font-size: 0.875rem;
   }
 
+  header .version {
+    font-size: 0.75rem;
+    margin-top: 0.25rem;
+    opacity: 0.5;
+  }
+
+  /* Beta ribbon */
+  .beta-ribbon {
+    position: fixed;
+    top: 18px;
+    left: -34px;
+    z-index: 200;
+    background: #f59e0b;
+    color: var(--bg);
+    font-size: 0.75rem;
+    font-weight: 700;
+    text-transform: uppercase;
+    letter-spacing: 0.1em;
+    padding: 4px 40px;
+    transform: rotate(-45deg);
+    box-shadow: 0 2px 6px rgba(0, 0, 0, 0.4);
+  }
+
   /* Gauge */
   .gauge-wrap {
     display: flex;
@@ -246,10 +269,13 @@
 </head>
 <body>
 
+<div class="beta-ribbon">Beta</div>
+
 <div class="container">
   <header>
     <h1>{{SERVER_NAME}}</h1>
     <p>Measure your network performance</p>
+    <p class="version">web-speedtest version: {{VERSION}}</p>
   </header>
 
   <div class="gauge-wrap">

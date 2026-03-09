@@ -141,10 +141,11 @@ class SpeedTestHandler(BaseHTTPRequestHandler):
 
         server: SpeedTestServer = self.server  # pyright: ignore[reportAssignmentType]
         html = index_path.read_text(encoding="utf-8")
-        # Inject the server name into the page
+        # Inject the server name and version into the page
         html = html.replace(
             "{{SERVER_NAME}}", html_mod.escape(server.server_name_label)
         )
+        html = html.replace("{{VERSION}}", html_mod.escape(VERSION_STR))
         body = html.encode("utf-8")
 
         self.send_response(200)

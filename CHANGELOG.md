@@ -1,6 +1,4 @@
-# Changelog
-
-## 1.0.0 — Mar 2026
+# web-speedtest 1.0.0 Beta 1 — 9 Mar 2026
 
 - Initial release
 - Server mode with web UI for browser-based speed testing

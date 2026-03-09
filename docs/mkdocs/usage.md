@@ -8,16 +8,18 @@ web-speedtest provides two subcommands: `server` and `client`.
 web-speedtest server
 web-speedtest server --port 3000
 web-speedtest server --host 127.0.0.1 --port 8080
+web-speedtest server --name "Office Network"
 web-speedtest server --quiet
 ```
 
 Starts an HTTP server that serves the web UI and API endpoints. Open the displayed URL in a browser to run a speed test, or use the CLI client to test from the terminal.
 
-| Option          | Description                                     |
-|-----------------|-------------------------------------------------|
-| `--host`, `-H`  | Address to bind to (default: `0.0.0.0`)        |
-| `--port`, `-p`  | Port to listen on (default: `8080`)            |
-| `--quiet`, `-q` | Suppress request logging                        |
+| Option          | Description                                          |
+|-----------------|------------------------------------------------------|
+| `--host`, `-H`  | Address to bind to (default: `0.0.0.0`)             |
+| `--port`, `-p`  | Port to listen on (default: `8080`)                 |
+| `--name`, `-n`  | Server display name shown in the web UI (default: `Speed Test`) |
+| `--quiet`, `-q` | Suppress request logging                             |
 
 ### Web UI
 
@@ -57,7 +59,7 @@ Accepts a body of data and returns the size received and duration.
 Returns server metadata.
 
 ```json
-{"version": "1.0.0", "server": "web-speedtest"}
+{"version": "1.0.0", "server": "web-speedtest", "name": "Speed Test"}
 ```
 
 All API endpoints include `Access-Control-Allow-Origin: *` for cross-origin browser requests.
@@ -67,9 +69,17 @@ All API endpoints include `Access-Control-Allow-Origin: *` for cross-origin brow
 ```bash
 web-speedtest client localhost:8080
 web-speedtest client http://speedtest.example.com:8080
+web-speedtest client localhost:8080 --compact
+web-speedtest client localhost:8080 --json
 ```
 
 Connects to a web-speedtest server and measures ping, download, and upload speeds from the terminal. Results are displayed with coloured output and a summary.
+
+The `client` command is the default — you can omit the subcommand name:
+
+```bash
+web-speedtest localhost:8080
+```
 
 The client runs three tests in sequence:
 
@@ -79,11 +89,37 @@ The client runs three tests in sequence:
 
 Progress is displayed in real-time with a progress bar during the download test.
 
-| Argument  | Description                                                            |
-|-----------|------------------------------------------------------------------------|
-| `SERVER`  | Server URL or host:port (e.g. `localhost:8080` or `http://host:8080`) |
+| Argument / Option   | Description                                                            |
+|---------------------|------------------------------------------------------------------------|
+| `SERVER`            | Server URL or host:port (e.g. `localhost:8080` or `http://host:8080`) |
+| `--compact`, `-c`   | Compact one-line output                                               |
+| `--json`, `-j`      | Output results as JSON                                                |
 
 If the URL scheme is omitted, `http://` is assumed.
+
+### Output Modes
+
+**Normal** (default) — full interactive output with progress bar and coloured summary.
+
+**Compact** (`--compact`) — single-line output suitable for scripting:
+
+```
+ping 4.2 ms / down 523.46 Mbps / up 312.35 Mbps
+```
+
+**JSON** (`--json`) — machine-readable output with both raw values and human-readable strings:
+
+```json
+{
+  "server": "http://localhost:8080",
+  "ping_ms": 4,
+  "ping": "4.2 ms",
+  "download_bps": 548798259,
+  "download": "548.80 Mbps",
+  "upload_bps": 327516160,
+  "upload": "327.52 Mbps"
+}
+```
 
 ## Global Options
 
