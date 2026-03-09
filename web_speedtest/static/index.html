@@ -1,0 +1,499 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>{{SERVER_NAME}}</title>
+<style>
+  :root {
+    --bg: #0f1117;
+    --surface: #1a1d27;
+    --surface-hover: #232736;
+    --border: #2a2e3d;
+    --text: #e4e6ef;
+    --text-dim: #6b7394;
+    --accent: #6c8cff;
+    --accent-glow: rgba(108, 140, 255, 0.15);
+    --green: #4ade80;
+    --yellow: #fbbf24;
+    --red: #f87171;
+    --radius: 12px;
+  }
+
+  * { margin: 0; padding: 0; box-sizing: border-box; }
+
+  body {
+    font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', system-ui, sans-serif;
+    background: var(--bg);
+    color: var(--text);
+    min-height: 100vh;
+    display: flex;
+    flex-direction: column;
+    align-items: center;
+    justify-content: center;
+    padding: 2rem;
+  }
+
+  .container {
+    width: 100%;
+    max-width: 560px;
+  }
+
+  header {
+    text-align: center;
+    margin-bottom: 2.5rem;
+  }
+
+  header h1 {
+    font-size: 1.5rem;
+    font-weight: 600;
+    letter-spacing: -0.02em;
+    margin-bottom: 0.25rem;
+  }
+
+  header p {
+    color: var(--text-dim);
+    font-size: 0.875rem;
+  }
+
+  /* Gauge */
+  .gauge-wrap {
+    display: flex;
+    justify-content: center;
+    margin-bottom: 2rem;
+  }
+
+  .gauge {
+    position: relative;
+    width: 240px;
+    height: 140px;
+  }
+
+  .gauge svg {
+    width: 100%;
+    height: 100%;
+    overflow: visible;
+  }
+
+  .gauge-bg {
+    fill: none;
+    stroke: var(--border);
+    stroke-width: 12;
+    stroke-linecap: round;
+  }
+
+  .gauge-fill {
+    fill: none;
+    stroke: var(--accent);
+    stroke-width: 12;
+    stroke-linecap: round;
+    transition: stroke-dashoffset 0.3s ease, stroke 0.3s ease;
+    filter: drop-shadow(0 0 8px var(--accent-glow));
+  }
+
+  .gauge-value {
+    position: absolute;
+    bottom: 8px;
+    left: 50%;
+    transform: translateX(-50%);
+    text-align: center;
+  }
+
+  .gauge-value .number {
+    font-size: 2.5rem;
+    font-weight: 700;
+    font-variant-numeric: tabular-nums;
+    letter-spacing: -0.03em;
+    line-height: 1;
+  }
+
+  .gauge-value .unit {
+    font-size: 0.8rem;
+    color: var(--text-dim);
+    margin-top: 2px;
+  }
+
+  .gauge-label {
+    position: absolute;
+    top: -4px;
+    left: 50%;
+    transform: translateX(-50%);
+    font-size: 0.75rem;
+    color: var(--text-dim);
+    text-transform: uppercase;
+    letter-spacing: 0.08em;
+  }
+
+  /* Start button */
+  .start-wrap {
+    display: flex;
+    justify-content: center;
+    margin-bottom: 2rem;
+  }
+
+  .btn-start {
+    background: var(--accent);
+    color: #fff;
+    border: none;
+    padding: 0.75rem 3rem;
+    border-radius: 9999px;
+    font-size: 1rem;
+    font-weight: 600;
+    cursor: pointer;
+    transition: all 0.2s ease;
+    letter-spacing: 0.02em;
+  }
+
+  .btn-start:hover:not(:disabled) {
+    filter: brightness(1.15);
+    box-shadow: 0 0 24px var(--accent-glow);
+  }
+
+  .btn-start:disabled {
+    opacity: 0.5;
+    cursor: not-allowed;
+  }
+
+  /* Results panel */
+  .results {
+    background: var(--surface);
+    border: 1px solid var(--border);
+    border-radius: var(--radius);
+    overflow: hidden;
+  }
+
+  .result-row {
+    display: flex;
+    align-items: center;
+    padding: 1rem 1.25rem;
+    border-bottom: 1px solid var(--border);
+    transition: background 0.15s ease;
+  }
+
+  .result-row:last-child {
+    border-bottom: none;
+  }
+
+  .result-row:hover {
+    background: var(--surface-hover);
+  }
+
+  .result-icon {
+    width: 36px;
+    height: 36px;
+    border-radius: 8px;
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    margin-right: 1rem;
+    font-size: 1.1rem;
+    flex-shrink: 0;
+  }
+
+  .result-icon.ping { background: rgba(108, 140, 255, 0.12); color: var(--accent); }
+  .result-icon.download { background: rgba(74, 222, 128, 0.12); color: var(--green); }
+  .result-icon.upload { background: rgba(251, 191, 36, 0.12); color: var(--yellow); }
+
+  .result-label {
+    flex: 1;
+    font-size: 0.875rem;
+    color: var(--text-dim);
+  }
+
+  .result-value {
+    font-size: 1.1rem;
+    font-weight: 600;
+    font-variant-numeric: tabular-nums;
+    min-width: 120px;
+    text-align: right;
+  }
+
+  .result-value.pending {
+    color: var(--text-dim);
+    font-weight: 400;
+  }
+
+  .result-value.active {
+    color: var(--accent);
+  }
+
+  /* Status bar */
+  .status {
+    text-align: center;
+    margin-top: 1.5rem;
+    font-size: 0.8rem;
+    color: var(--text-dim);
+    min-height: 1.2em;
+  }
+
+  /* Spinner for active test */
+  @keyframes spin {
+    to { transform: rotate(360deg); }
+  }
+
+  .spinner {
+    display: inline-block;
+    width: 14px;
+    height: 14px;
+    border: 2px solid var(--border);
+    border-top-color: var(--accent);
+    border-radius: 50%;
+    animation: spin 0.7s linear infinite;
+    vertical-align: middle;
+    margin-right: 4px;
+  }
+</style>
+</head>
+<body>
+
+<div class="container">
+  <header>
+    <h1>{{SERVER_NAME}}</h1>
+    <p>Measure your network performance</p>
+  </header>
+
+  <div class="gauge-wrap">
+    <div class="gauge">
+      <span class="gauge-label" id="gaugeLabel">&nbsp;</span>
+      <svg viewBox="0 0 200 120">
+        <path class="gauge-bg" d="M 20 110 A 80 80 0 0 1 180 110" />
+        <path class="gauge-fill" id="gaugeFill" d="M 20 110 A 80 80 0 0 1 180 110"
+              stroke-dasharray="251.33" stroke-dashoffset="251.33" />
+      </svg>
+      <div class="gauge-value">
+        <div class="number" id="gaugeNumber">&mdash;</div>
+        <div class="unit" id="gaugeUnit">&nbsp;</div>
+      </div>
+    </div>
+  </div>
+
+  <div class="start-wrap">
+    <button class="btn-start" id="btnStart" onclick="startTest()">Start Test</button>
+  </div>
+
+  <div class="results">
+    <div class="result-row">
+      <div class="result-icon ping">&#8596;</div>
+      <div class="result-label">Ping</div>
+      <div class="result-value pending" id="resPing">&mdash;</div>
+    </div>
+    <div class="result-row">
+      <div class="result-icon download">&#8595;</div>
+      <div class="result-label">Download</div>
+      <div class="result-value pending" id="resDownload">&mdash;</div>
+    </div>
+    <div class="result-row">
+      <div class="result-icon upload">&#8593;</div>
+      <div class="result-label">Upload</div>
+      <div class="result-value pending" id="resUpload">&mdash;</div>
+    </div>
+  </div>
+
+  <div class="status" id="status">&nbsp;</div>
+
+</div>
+
+<script>
+(function() {
+  'use strict';
+
+  const PING_COUNT = 10;
+  const DOWNLOAD_SIZE = 25 * 1024 * 1024;
+  const UPLOAD_SIZE = 10 * 1024 * 1024;
+
+  const ARC_LENGTH = 251.33;
+
+  const gaugeFill  = document.getElementById('gaugeFill');
+  const gaugeNum   = document.getElementById('gaugeNumber');
+  const gaugeUnit  = document.getElementById('gaugeUnit');
+  const gaugeLabel = document.getElementById('gaugeLabel');
+  const btnStart   = document.getElementById('btnStart');
+  const resPing    = document.getElementById('resPing');
+  const resDown    = document.getElementById('resDownload');
+  const resUp      = document.getElementById('resUpload');
+  const statusEl   = document.getElementById('status');
+
+  function setGauge(fraction, colour) {
+    fraction = Math.max(0, Math.min(1, fraction));
+    gaugeFill.style.strokeDashoffset = ARC_LENGTH * (1 - fraction);
+    if (colour) gaugeFill.style.stroke = colour;
+  }
+
+  function resetGauge() {
+    setGauge(0, 'var(--accent)');
+    gaugeNum.textContent = '\u2014';
+    gaugeUnit.textContent = '\u00a0';
+    gaugeLabel.textContent = '\u00a0';
+  }
+
+  function formatSpeed(bps) {
+    if (bps >= 1e9) return { value: (bps / 1e9).toFixed(2), unit: 'Gbps' };
+    if (bps >= 1e6) return { value: (bps / 1e6).toFixed(2), unit: 'Mbps' };
+    if (bps >= 1e3) return { value: (bps / 1e3).toFixed(1), unit: 'Kbps' };
+    return { value: Math.round(bps), unit: 'bps' };
+  }
+
+  function formatLatency(ms) {
+    if (ms < 1) return { value: (ms * 1000).toFixed(0), unit: '\u00b5s' };
+    if (ms < 100) return { value: ms.toFixed(1), unit: 'ms' };
+    return { value: Math.round(ms), unit: 'ms' };
+  }
+
+  // Map speed to 0-1 gauge (logarithmic scale: 1 Kbps to 10 Gbps)
+  function speedToFraction(bps) {
+    if (bps <= 0) return 0;
+    const minLog = Math.log10(1e3);     // 1 Kbps
+    const maxLog = Math.log10(10e9);    // 10 Gbps
+    const log = Math.log10(bps);
+    return Math.max(0, Math.min(1, (log - minLog) / (maxLog - minLog)));
+  }
+
+  // Map ping to 0-1 gauge (inverted: lower is better)
+  function pingToFraction(ms) {
+    if (ms <= 0) return 1;
+    const minLog = Math.log10(0.1);   // 0.1 ms
+    const maxLog = Math.log10(1000);  // 1000 ms
+    const log = Math.log10(ms);
+    return Math.max(0, Math.min(1, 1 - (log - minLog) / (maxLog - minLog)));
+  }
+
+  async function testPing() {
+    gaugeLabel.textContent = 'PING';
+    statusEl.innerHTML = '<span class="spinner"></span> Testing ping\u2026';
+    resPing.className = 'result-value active';
+    resPing.innerHTML = '<span class="spinner"></span>';
+
+    const latencies = [];
+    for (let i = 0; i < PING_COUNT; i++) {
+      try {
+        const t0 = performance.now();
+        await fetch('/api/ping?_=' + Date.now(), { cache: 'no-store' });
+        const ms = performance.now() - t0;
+        latencies.push(ms);
+
+        const avg = latencies.reduce((a, b) => a + b) / latencies.length;
+        const fmt = formatLatency(avg);
+        gaugeNum.textContent = fmt.value;
+        gaugeUnit.textContent = fmt.unit;
+        setGauge(pingToFraction(avg), 'var(--accent)');
+        resPing.textContent = fmt.value + ' ' + fmt.unit;
+      } catch (e) {
+        // skip failed sample
+      }
+    }
+
+    if (latencies.length === 0) {
+      resPing.textContent = 'failed';
+      resPing.className = 'result-value';
+      return null;
+    }
+
+    const avg = latencies.reduce((a, b) => a + b) / latencies.length;
+    const fmt = formatLatency(avg);
+    resPing.textContent = fmt.value + ' ' + fmt.unit;
+    resPing.className = 'result-value';
+    return avg;
+  }
+
+  async function testDownload() {
+    gaugeLabel.textContent = 'DOWNLOAD';
+    statusEl.innerHTML = '<span class="spinner"></span> Testing download\u2026';
+    resDown.className = 'result-value active';
+    resDown.innerHTML = '<span class="spinner"></span>';
+
+    try {
+      const t0 = performance.now();
+      const resp = await fetch('/api/download?size=' + DOWNLOAD_SIZE + '&_=' + Date.now(), {
+        cache: 'no-store'
+      });
+
+      const reader = resp.body.getReader();
+      let received = 0;
+      while (true) {
+        const { done, value } = await reader.read();
+        if (done) break;
+        received += value.byteLength;
+
+        const elapsed = (performance.now() - t0) / 1000;
+        const bps = (received * 8) / Math.max(elapsed, 0.001);
+        const fmt = formatSpeed(bps);
+        gaugeNum.textContent = fmt.value;
+        gaugeUnit.textContent = fmt.unit;
+        setGauge(speedToFraction(bps), 'var(--green)');
+        resDown.textContent = fmt.value + ' ' + fmt.unit;
+      }
+
+      const elapsed = (performance.now() - t0) / 1000;
+      const bps = (received * 8) / Math.max(elapsed, 0.001);
+      const fmt = formatSpeed(bps);
+      resDown.textContent = fmt.value + ' ' + fmt.unit;
+      resDown.className = 'result-value';
+      return bps;
+    } catch (e) {
+      resDown.textContent = 'failed';
+      resDown.className = 'result-value';
+      return null;
+    }
+  }
+
+  async function testUpload() {
+    gaugeLabel.textContent = 'UPLOAD';
+    statusEl.innerHTML = '<span class="spinner"></span> Testing upload\u2026';
+    resUp.className = 'result-value active';
+    resUp.innerHTML = '<span class="spinner"></span>';
+
+    try {
+      const payload = new Uint8Array(UPLOAD_SIZE);
+      crypto.getRandomValues(new Uint8Array(payload.buffer, 0, Math.min(65536, UPLOAD_SIZE)));
+
+      const t0 = performance.now();
+      const resp = await fetch('/api/upload', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/octet-stream' },
+        body: payload
+      });
+
+      const elapsed = (performance.now() - t0) / 1000;
+      const bps = (UPLOAD_SIZE * 8) / Math.max(elapsed, 0.001);
+      const fmt = formatSpeed(bps);
+
+      gaugeNum.textContent = fmt.value;
+      gaugeUnit.textContent = fmt.unit;
+      setGauge(speedToFraction(bps), 'var(--yellow)');
+
+      resUp.textContent = fmt.value + ' ' + fmt.unit;
+      resUp.className = 'result-value';
+      return bps;
+    } catch (e) {
+      resUp.textContent = 'failed';
+      resUp.className = 'result-value';
+      return null;
+    }
+  }
+
+  window.startTest = async function() {
+    btnStart.disabled = true;
+    btnStart.textContent = 'Testing\u2026';
+
+    // Reset
+    resPing.textContent = '\u2014';
+    resPing.className = 'result-value pending';
+    resDown.textContent = '\u2014';
+    resDown.className = 'result-value pending';
+    resUp.textContent = '\u2014';
+    resUp.className = 'result-value pending';
+    resetGauge();
+
+    await testPing();
+    await testDownload();
+    await testUpload();
+
+    statusEl.textContent = 'Test complete';
+    gaugeLabel.textContent = 'DONE';
+    btnStart.disabled = false;
+    btnStart.textContent = 'Test Again';
+  };
+})();
+</script>
+</body>
+</html>
