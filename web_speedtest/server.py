@@ -28,7 +28,7 @@ import os
 import time
 from functools import partial
 from http.server import BaseHTTPRequestHandler
-from http.server import HTTPServer
+from http.server import ThreadingHTTPServer
 from pathlib import Path
 from urllib.parse import parse_qs
 from urllib.parse import urlparse
@@ -269,8 +269,10 @@ class SpeedTestHandler(BaseHTTPRequestHandler):
 
 
 # ----------------------------------------------------------------------------------------
-class SpeedTestServer(HTTPServer):
-    """HTTP server with verbose flag and optional name."""
+class SpeedTestServer(ThreadingHTTPServer):
+    """Threaded HTTP server with verbose flag and optional name."""
+
+    daemon_threads = True
 
     verbose: bool = True
     server_name_label: str = "Speed Test"
