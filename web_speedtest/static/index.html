@@ -326,6 +326,7 @@
   const PING_COUNT = 10;
   const DOWNLOAD_SIZE = 25 * 1024 * 1024;
   const UPLOAD_SIZE = 10 * 1024 * 1024;
+  const PARALLEL_STREAMS = 6;
 
   const ARC_LENGTH = 251.33;
 
@@ -428,29 +429,38 @@
     resDown.innerHTML = '<span class="spinner"></span>';
 
     try {
+      const streamSize = Math.ceil(DOWNLOAD_SIZE / PARALLEL_STREAMS);
+      let totalReceived = 0;
       const t0 = performance.now();
-      const resp = await fetch('/api/download?size=' + DOWNLOAD_SIZE + '&_=' + Date.now(), {
-        cache: 'no-store'
-      });
 
-      const reader = resp.body.getReader();
-      let received = 0;
-      while (true) {
-        const { done, value } = await reader.read();
-        if (done) break;
-        received += value.byteLength;
+      async function downloadStream(idx) {
+        const resp = await fetch('/api/download?size=' + streamSize + '&_=' + Date.now() + '&s=' + idx, {
+          cache: 'no-store'
+        });
+        const reader = resp.body.getReader();
+        while (true) {
+          const { done, value } = await reader.read();
+          if (done) break;
+          totalReceived += value.byteLength;
 
-        const elapsed = (performance.now() - t0) / 1000;
-        const bps = (received * 8) / Math.max(elapsed, 0.001);
-        const fmt = formatSpeed(bps);
-        gaugeNum.textContent = fmt.value;
-        gaugeUnit.textContent = fmt.unit;
-        setGauge(speedToFraction(bps), 'var(--green)');
-        resDown.textContent = fmt.value + ' ' + fmt.unit;
+          const elapsed = (performance.now() - t0) / 1000;
+          const bps = (totalReceived * 8) / Math.max(elapsed, 0.001);
+          const fmt = formatSpeed(bps);
+          gaugeNum.textContent = fmt.value;
+          gaugeUnit.textContent = fmt.unit;
+          setGauge(speedToFraction(bps), 'var(--green)');
+          resDown.textContent = fmt.value + ' ' + fmt.unit;
+        }
       }
 
+      const streams = [];
+      for (let i = 0; i < PARALLEL_STREAMS; i++) {
+        streams.push(downloadStream(i));
+      }
+      await Promise.all(streams);
+
       const elapsed = (performance.now() - t0) / 1000;
-      const bps = (received * 8) / Math.max(elapsed, 0.001);
+      const bps = (totalReceived * 8) / Math.max(elapsed, 0.001);
       const fmt = formatSpeed(bps);
       resDown.textContent = fmt.value + ' ' + fmt.unit;
       resDown.className = 'result-value';
@@ -469,18 +479,38 @@
     resUp.innerHTML = '<span class="spinner"></span>';
 
     try {
-      const payload = new Uint8Array(UPLOAD_SIZE);
-      crypto.getRandomValues(new Uint8Array(payload.buffer, 0, Math.min(65536, UPLOAD_SIZE)));
-
+      const streamSize = Math.ceil(UPLOAD_SIZE / PARALLEL_STREAMS);
+      const totalSize = streamSize * PARALLEL_STREAMS;
+      let completedBytes = 0;
       const t0 = performance.now();
-      const resp = await fetch('/api/upload', {
-        method: 'POST',
-        headers: { 'Content-Type': 'application/octet-stream' },
-        body: payload
-      });
+
+      async function uploadStream() {
+        const payload = new Uint8Array(streamSize);
+        crypto.getRandomValues(new Uint8Array(payload.buffer, 0, Math.min(65536, streamSize)));
+        await fetch('/api/upload', {
+          method: 'POST',
+          headers: { 'Content-Type': 'application/octet-stream' },
+          body: payload
+        });
+        completedBytes += streamSize;
+
+        const elapsed = (performance.now() - t0) / 1000;
+        const bps = (completedBytes * 8) / Math.max(elapsed, 0.001);
+        const fmt = formatSpeed(bps);
+        gaugeNum.textContent = fmt.value;
+        gaugeUnit.textContent = fmt.unit;
+        setGauge(speedToFraction(bps), 'var(--yellow)');
+        resUp.textContent = fmt.value + ' ' + fmt.unit;
+      }
+
+      const streams = [];
+      for (let i = 0; i < PARALLEL_STREAMS; i++) {
+        streams.push(uploadStream());
+      }
+      await Promise.all(streams);
 
       const elapsed = (performance.now() - t0) / 1000;
-      const bps = (UPLOAD_SIZE * 8) / Math.max(elapsed, 0.001);
+      const bps = (totalSize * 8) / Math.max(elapsed, 0.001);
       const fmt = formatSpeed(bps);
 
       gaugeNum.textContent = fmt.value;

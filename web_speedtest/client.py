@@ -22,6 +22,8 @@ import sys
 import time
 import urllib.error
 import urllib.request
+from concurrent.futures import ThreadPoolExecutor
+from concurrent.futures import as_completed
 from typing import Literal
 from .colour import bold
 from .colour import cyan
@@ -51,6 +53,9 @@ _UPLOAD_SIZE = 10 * 1024 * 1024
 
 # Read chunk size: 64 KB
 _CHUNK_SIZE = 65536
+
+# Number of parallel streams for download/upload
+_PARALLEL_STREAMS = 6
 
 # Connection timeout in seconds
 _TIMEOUT = 30
@@ -127,15 +132,21 @@ def _test_ping(base_url: str, quiet: bool = False) -> float | None:
 
 # ----------------------------------------------------------------------------------------
 def _test_download(base_url: str, quiet: bool = False) -> float | None:
-    """Measure download speed. Returns bits per second or None on error."""
-    url = f"{base_url}/api/download?size={_DOWNLOAD_SIZE}"
+    """Measure download speed using parallel streams. Returns bits per second or None."""
+    stream_size = _DOWNLOAD_SIZE // _PARALLEL_STREAMS
+    total_target = stream_size * _PARALLEL_STREAMS
+    total_received = 0
+    lock = __import__("threading").Lock()
 
     if not quiet:
         print(dim("  Testing download..."), end="", flush=True)
 
-    try:
+    start = time.monotonic()
+
+    def _download_stream() -> int:
+        nonlocal total_received
+        url = f"{base_url}/api/download?size={stream_size}"
         req = urllib.request.Request(url)
-        start = time.monotonic()
         received = 0
         with urllib.request.urlopen(req, timeout=_TIMEOUT) as resp:
             while True:
@@ -143,58 +154,76 @@ def _test_download(base_url: str, quiet: bool = False) -> float | None:
                 if not chunk:
                     break
                 received += len(chunk)
+                with lock:
+                    total_received += len(chunk)
                 if not quiet:
-                    fraction = received / _DOWNLOAD_SIZE
-                    speed_so_far = (received * 8) / max(time.monotonic() - start, 0.001)
+                    with lock:
+                        fraction = total_received / total_target
+                        speed_so_far = (total_received * 8) / max(
+                            time.monotonic() - start, 0.001
+                        )
                     print(
                         f"\r  Testing download... {_progress_bar(fraction)} {_format_speed(speed_so_far)}   ",
                         end="",
                         flush=True,
                     )
-        elapsed = time.monotonic() - start
+        return received
+
+    try:
+        with ThreadPoolExecutor(max_workers=_PARALLEL_STREAMS) as pool:
+            futures = [pool.submit(_download_stream) for _ in range(_PARALLEL_STREAMS)]
+            for fut in as_completed(futures):
+                fut.result()
     except (urllib.error.URLError, OSError, TimeoutError) as e:
         if not quiet:
             print(f"\r  Download failed: {e}{'':40}")
         return None
 
+    elapsed = time.monotonic() - start
+
     if not quiet:
         print("\r", end="")
 
-    if elapsed <= 0 or received == 0:
+    if elapsed <= 0 or total_received == 0:
         return None
 
-    bits_per_second = (received * 8) / elapsed
+    bits_per_second = (total_received * 8) / elapsed
     return bits_per_second
 
 
 # ----------------------------------------------------------------------------------------
 def _test_upload(base_url: str, quiet: bool = False) -> float | None:
-    """Measure upload speed. Returns bits per second or None on error."""
-    url = f"{base_url}/api/upload"
+    """Measure upload speed using parallel streams. Returns bits per second or None."""
+    stream_size = _UPLOAD_SIZE // _PARALLEL_STREAMS
+    total_size = stream_size * _PARALLEL_STREAMS
 
     if not quiet:
         print(dim("  Testing upload..."), end="", flush=True)
 
-    # Generate random upload payload
-    payload = os.urandom(_UPLOAD_SIZE)
+    # Generate random upload payload (shared across streams via slicing)
+    payload = os.urandom(stream_size)
 
-    try:
-        req = urllib.request.Request(
-            url,
-            data=payload,
-            method="POST",
-        )
+    start = time.monotonic()
+
+    def _upload_stream() -> None:
+        url = f"{base_url}/api/upload"
+        req = urllib.request.Request(url, data=payload, method="POST")
         req.add_header("Content-Type", "application/octet-stream")
         req.add_header("Content-Length", str(len(payload)))
-
-        start = time.monotonic()
         with urllib.request.urlopen(req, timeout=_TIMEOUT) as resp:
             resp.read()
-        elapsed = time.monotonic() - start
+
+    try:
+        with ThreadPoolExecutor(max_workers=_PARALLEL_STREAMS) as pool:
+            futures = [pool.submit(_upload_stream) for _ in range(_PARALLEL_STREAMS)]
+            for fut in as_completed(futures):
+                fut.result()
     except (urllib.error.URLError, OSError, TimeoutError) as e:
         if not quiet:
             print(f"\r  Upload failed: {e}{'':40}")
         return None
+
+    elapsed = time.monotonic() - start
 
     if not quiet:
         print("\r", end="")
@@ -202,7 +231,7 @@ def _test_upload(base_url: str, quiet: bool = False) -> float | None:
     if elapsed <= 0:
         return None
 
-    bits_per_second = (_UPLOAD_SIZE * 8) / elapsed
+    bits_per_second = (total_size * 8) / elapsed
     return bits_per_second
 
 
