@@ -376,10 +376,11 @@
 (function() {
   'use strict';
 
-  const PING_COUNT = 10;
-  const DOWNLOAD_SIZE = 25 * 1024 * 1024;
-  const UPLOAD_SIZE = 10 * 1024 * 1024;
+  const PING_COUNT       = 10;
+  const TEST_DURATION    = 8000;              // ms per test phase
   const PARALLEL_STREAMS = 6;
+  const STREAM_CHUNK     = 100 * 1024 * 1024; // 100 MB per download request (loop until aborted)
+  const UPLOAD_CHUNK     = 1 * 1024 * 1024;   // 1 MB per upload request (loop until aborted)
 
   const ARC_LENGTH = 251.33;
 
@@ -506,7 +507,7 @@
     return avg;
   }
 
-  async function testDownload() {
+  async function testDownload(durationMs) {
     const g = gauges[1];
     showGauge(g);
     statusEl.innerHTML = '<span class="spinner"></span> Testing download\u2026';
@@ -514,35 +515,41 @@
     resDown.innerHTML = '<span class="spinner"></span>';
 
     try {
-      const streamSize = Math.ceil(DOWNLOAD_SIZE / PARALLEL_STREAMS);
+      const controller = new AbortController();
+      const timer = setTimeout(() => controller.abort(), durationMs);
       let totalReceived = 0;
       const t0 = performance.now();
 
       async function downloadStream(idx) {
-        const resp = await fetch('/api/download?size=' + streamSize + '&_=' + Date.now() + '&s=' + idx, {
-          cache: 'no-store'
-        });
-        const reader = resp.body.getReader();
-        while (true) {
-          const { done, value } = await reader.read();
-          if (done) break;
-          totalReceived += value.byteLength;
-
-          const elapsed = (performance.now() - t0) / 1000;
-          const bps = (totalReceived * 8) / Math.max(elapsed, 0.001);
-          const fmt = formatSpeed(bps);
-          g.number.textContent = fmt.value;
-          g.unit.textContent = fmt.unit;
-          setGauge(g, speedToFraction(bps), 'var(--green)');
-          resDown.textContent = fmt.value + ' ' + fmt.unit;
+        try {
+          while (!controller.signal.aborted) {
+            const resp = await fetch(
+              '/api/download?size=' + STREAM_CHUNK + '&s=' + idx + '&_=' + Date.now(),
+              { cache: 'no-store', signal: controller.signal }
+            );
+            const reader = resp.body.getReader();
+            while (true) {
+              const { done, value } = await reader.read();
+              if (done) break;
+              totalReceived += value.byteLength;
+              const elapsed = (performance.now() - t0) / 1000;
+              const bps = (totalReceived * 8) / Math.max(elapsed, 0.001);
+              const fmt = formatSpeed(bps);
+              g.number.textContent = fmt.value;
+              g.unit.textContent = fmt.unit;
+              setGauge(g, speedToFraction(bps), 'var(--green)');
+              resDown.textContent = fmt.value + ' ' + fmt.unit;
+            }
+          }
+        } catch (e) {
+          // AbortError expected when timer fires
         }
       }
 
       const streams = [];
-      for (let i = 0; i < PARALLEL_STREAMS; i++) {
-        streams.push(downloadStream(i));
-      }
+      for (let i = 0; i < PARALLEL_STREAMS; i++) streams.push(downloadStream(i));
       await Promise.all(streams);
+      clearTimeout(timer);
 
       const elapsed = (performance.now() - t0) / 1000;
       const bps = (totalReceived * 8) / Math.max(elapsed, 0.001);
@@ -557,7 +564,7 @@
     }
   }
 
-  async function testUpload() {
+  async function testUpload(durationMs) {
     const g = gauges[2];
     showGauge(g);
     statusEl.innerHTML = '<span class="spinner"></span> Testing upload\u2026';
@@ -565,43 +572,48 @@
     resUp.innerHTML = '<span class="spinner"></span>';
 
     try {
-      const streamSize = Math.ceil(UPLOAD_SIZE / PARALLEL_STREAMS);
-      const totalSize = streamSize * PARALLEL_STREAMS;
+      const controller = new AbortController();
+      setTimeout(() => controller.abort(), durationMs);
       let completedBytes = 0;
       const t0 = performance.now();
 
-      async function uploadStream() {
-        const payload = new Uint8Array(streamSize);
-        crypto.getRandomValues(new Uint8Array(payload.buffer, 0, Math.min(65536, streamSize)));
-        await fetch('/api/upload', {
-          method: 'POST',
-          headers: { 'Content-Type': 'application/octet-stream' },
-          body: payload
-        });
-        completedBytes += streamSize;
+      // Pre-fill first 64 KB with random data; the rest can be zeroes (it's all opaque bandwidth)
+      const payload = new Uint8Array(UPLOAD_CHUNK);
+      crypto.getRandomValues(new Uint8Array(payload.buffer, 0, Math.min(65536, UPLOAD_CHUNK)));
 
-        const elapsed = (performance.now() - t0) / 1000;
-        const bps = (completedBytes * 8) / Math.max(elapsed, 0.001);
-        const fmt = formatSpeed(bps);
-        g.number.textContent = fmt.value;
-        g.unit.textContent = fmt.unit;
-        setGauge(g, speedToFraction(bps), 'var(--yellow)');
-        resUp.textContent = fmt.value + ' ' + fmt.unit;
+      async function uploadStream() {
+        while (!controller.signal.aborted) {
+          try {
+            await fetch('/api/upload', {
+              method: 'POST',
+              headers: { 'Content-Type': 'application/octet-stream' },
+              body: payload,
+              signal: controller.signal
+            });
+            completedBytes += UPLOAD_CHUNK;
+            const elapsed = (performance.now() - t0) / 1000;
+            const bps = (completedBytes * 8) / Math.max(elapsed, 0.001);
+            const fmt = formatSpeed(bps);
+            g.number.textContent = fmt.value;
+            g.unit.textContent = fmt.unit;
+            setGauge(g, speedToFraction(bps), 'var(--yellow)');
+            resUp.textContent = fmt.value + ' ' + fmt.unit;
+          } catch (e) {
+            break; // AbortError expected when timer fires
+          }
+        }
       }
 
       const streams = [];
-      for (let i = 0; i < PARALLEL_STREAMS; i++) {
-        streams.push(uploadStream());
-      }
+      for (let i = 0; i < PARALLEL_STREAMS; i++) streams.push(uploadStream());
       await Promise.all(streams);
 
       const elapsed = (performance.now() - t0) / 1000;
-      const bps = (totalSize * 8) / Math.max(elapsed, 0.001);
+      const bps = (completedBytes * 8) / Math.max(elapsed, 0.001);
       const fmt = formatSpeed(bps);
       g.number.textContent = fmt.value;
       g.unit.textContent = fmt.unit;
       setGauge(g, speedToFraction(bps), 'var(--yellow)');
-
       resUp.textContent = fmt.value + ' ' + fmt.unit;
       resUp.className = 'result-value';
       return bps;
@@ -625,9 +637,16 @@
     resUp.className = 'result-value pending';
     resetAllGauges();
 
+    // Fetch test duration from server (falls back to default if unavailable)
+    let durationMs = TEST_DURATION;
+    try {
+      const info = await fetch('/api/info', { cache: 'no-store' }).then(r => r.json());
+      if (info.test_duration) durationMs = info.test_duration * 1000;
+    } catch (e) { /* use default */ }
+
     await testPing();
-    await testDownload();
-    await testUpload();
+    await testDownload(durationMs);
+    await testUpload(durationMs);
 
     finaliseGauges();
     statusEl.textContent = 'Test complete';

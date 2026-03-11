@@ -101,6 +101,14 @@ def _create_parser() -> ArgsParser:
         help="Server display name shown in the web UI (default: Speed Test)",
     )
     server_cmd.add_argument(
+        "--duration",
+        "-d",
+        type=int,
+        default=8,
+        metavar="SECONDS",
+        help="Duration of each download/upload test phase in seconds (default: 8)",
+    )
+    server_cmd.add_argument(
         "--quiet",
         "-q",
         action="store_true",
@@ -145,8 +153,9 @@ def _cmd_server(args: Namespace) -> int:
     host: str = args.host
     port: int = args.port
     name: str = args.name
+    duration: int = args.duration
     quiet: bool = args.quiet
-    return run_server(host, port, verbose=not quiet, name=name)
+    return run_server(host, port, verbose=not quiet, name=name, test_duration=duration)
 
 
 # ----------------------------------------------------------------------------------------

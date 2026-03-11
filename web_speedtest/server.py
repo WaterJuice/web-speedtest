@@ -42,10 +42,10 @@ from .version import VERSION_STR
 #   Constants
 # ----------------------------------------------------------------------------------------
 
-# Default download size: 25 MB
-_DEFAULT_DOWNLOAD_SIZE = 25 * 1024 * 1024
+# Default test duration for download/upload phases (seconds)
+_DEFAULT_TEST_DURATION = 8
 
-# Maximum download size: 100 MB
+# Maximum download size per request: 100 MB (client loops until time is up)
 _MAX_DOWNLOAD_SIZE = 100 * 1024 * 1024
 
 # Chunk size for streaming: 64 KB
@@ -196,11 +196,11 @@ class SpeedTestHandler(BaseHTTPRequestHandler):
     def _handle_download(self, query: str) -> None:
         """Stream random data for download speed measurement."""
         params = parse_qs(query)
-        size_str = params.get("size", [str(_DEFAULT_DOWNLOAD_SIZE)])[0]
+        size_str = params.get("size", [str(_MAX_DOWNLOAD_SIZE)])[0]
         try:
             size = int(size_str)
         except ValueError:
-            size = _DEFAULT_DOWNLOAD_SIZE
+            size = _MAX_DOWNLOAD_SIZE
 
         size = max(1, min(size, _MAX_DOWNLOAD_SIZE))
 
@@ -259,6 +259,7 @@ class SpeedTestHandler(BaseHTTPRequestHandler):
                 "version": VERSION_STR,
                 "server": "web-speedtest",
                 "name": server.server_name_label,
+                "test_duration": server.test_duration,
             }
         )
 
@@ -276,19 +277,28 @@ class SpeedTestServer(ThreadingHTTPServer):
 
     verbose: bool = True
     server_name_label: str = "Speed Test"
+    test_duration: int = _DEFAULT_TEST_DURATION
 
 
 # ----------------------------------------------------------------------------------------
-def run_server(host: str, port: int, verbose: bool, name: str = "Speed Test") -> int:
+def run_server(
+    host: str,
+    port: int,
+    verbose: bool,
+    name: str = "Speed Test",
+    test_duration: int = _DEFAULT_TEST_DURATION,
+) -> int:
     """Start the speed test server."""
     server = SpeedTestServer((host, port), partial(SpeedTestHandler))  # pyright: ignore[reportArgumentType]
     server.verbose = verbose
     server.server_name_label = name
+    server.test_duration = test_duration
 
     print(bold("web-speedtest server"))
     print(dim(f"  version:  {VERSION_STR}"))
     print(dim(f"  name:     {name}"))
     print(dim(f"  address:  {host}:{port}"))
+    print(dim(f"  duration: {test_duration}s per phase"))
     print()
     if host in ("0.0.0.0", "::"):  # noqa: S104
         print(
