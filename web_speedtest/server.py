@@ -234,21 +234,27 @@ class SpeedTestHandler(BaseHTTPRequestHandler):
 
         start = time.time()
         received = 0
-        while received < content_length:
-            chunk_len = min(_CHUNK_SIZE, content_length - received)
-            data = self.rfile.read(chunk_len)
-            if not data:
-                break
-            received += len(data)
+        try:
+            while received < content_length:
+                chunk_len = min(_CHUNK_SIZE, content_length - received)
+                data = self.rfile.read(chunk_len)
+                if not data:
+                    break
+                received += len(data)
+        except (BrokenPipeError, ConnectionResetError):
+            return
         elapsed = time.time() - start
 
-        self._send_json(
-            {
-                "size": received,
-                "duration": elapsed,
-                "timestamp": time.time(),
-            }
-        )
+        try:
+            self._send_json(
+                {
+                    "size": received,
+                    "duration": elapsed,
+                    "timestamp": time.time(),
+                }
+            )
+        except (BrokenPipeError, ConnectionResetError):
+            return
 
     # ------------------------------------------------------------------------------------
     def _handle_info(self) -> None:
