@@ -523,6 +523,12 @@
       let completedBytes = 0;
       const t0 = performance.now();
 
+      // Smoothly advance the gauge arc based on elapsed time, independent of request completions
+      const gaugeTimer = setInterval(function() {
+        const frac = Math.min((performance.now() - t0) / durationMs, 1);
+        setGauge(g, frac, 'var(--yellow)');
+      }, 50);
+
       // Pre-fill first 64 KB with random data; the rest can be zeroes (it's all opaque bandwidth)
       const payload = new Uint8Array(UPLOAD_CHUNK);
       crypto.getRandomValues(new Uint8Array(payload.buffer, 0, Math.min(65536, UPLOAD_CHUNK)));
@@ -542,7 +548,6 @@
             const fmt = formatSpeed(bps);
             g.number.textContent = fmt.value;
             g.unit.textContent = fmt.unit;
-            setGauge(g, Math.min(elapsed / (durationMs / 1000), 1), 'var(--yellow)');
             resUp.textContent = fmt.value + ' ' + fmt.unit;
           } catch (e) {
             break; // AbortError expected when timer fires
@@ -553,6 +558,7 @@
       const streams = [];
       for (let i = 0; i < PARALLEL_STREAMS; i++) streams.push(uploadStream());
       await Promise.all(streams);
+      clearInterval(gaugeTimer);
 
       const elapsed = (performance.now() - t0) / 1000;
       const bps = (completedBytes * 8) / Math.max(elapsed, 0.001);
