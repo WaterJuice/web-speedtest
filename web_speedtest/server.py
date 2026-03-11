@@ -290,7 +290,12 @@ def run_server(host: str, port: int, verbose: bool, name: str = "Speed Test") ->
     print(dim(f"  name:     {name}"))
     print(dim(f"  address:  {host}:{port}"))
     print()
-    print(green("  Listening on ") + cyan(f"http://{host}:{port}/"))
+    if host in ("0.0.0.0", "::"):  # noqa: S104
+        print(
+            green("  Listening on port ") + cyan(str(port)) + green(" (all interfaces)")
+        )
+    else:
+        print(green("  Listening on ") + cyan(f"http://{host}:{port}/"))
     print(dim("  Press Ctrl+C to stop"))
     print()
 

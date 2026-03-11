@@ -79,17 +79,30 @@
     box-shadow: 0 2px 6px rgba(0, 0, 0, 0.4);
   }
 
-  /* Gauge */
-  .gauge-wrap {
+  /* Gauges */
+  .gauges {
     display: flex;
     justify-content: center;
+    gap: 0.5rem;
     margin-bottom: 2rem;
+    min-height: 140px;
+    align-items: flex-end;
   }
 
   .gauge {
     position: relative;
     width: 240px;
     height: 140px;
+    transition: width 0.4s ease, height 0.4s ease;
+  }
+
+  .gauge.small {
+    width: 160px;
+    height: 100px;
+  }
+
+  .gauge.hidden {
+    display: none;
   }
 
   .gauge svg {
@@ -116,10 +129,11 @@
 
   .gauge-value {
     position: absolute;
-    bottom: 8px;
+    bottom: 6px;
     left: 50%;
     transform: translateX(-50%);
     text-align: center;
+    white-space: nowrap;
   }
 
   .gauge-value .number {
@@ -128,12 +142,22 @@
     font-variant-numeric: tabular-nums;
     letter-spacing: -0.03em;
     line-height: 1;
+    transition: font-size 0.4s ease;
+  }
+
+  .gauge.small .gauge-value .number {
+    font-size: 1.5rem;
   }
 
   .gauge-value .unit {
     font-size: 0.8rem;
     color: var(--text-dim);
     margin-top: 2px;
+    transition: font-size 0.4s ease;
+  }
+
+  .gauge.small .gauge-value .unit {
+    font-size: 0.65rem;
   }
 
   .gauge-label {
@@ -145,6 +169,11 @@
     color: var(--text-dim);
     text-transform: uppercase;
     letter-spacing: 0.08em;
+    transition: font-size 0.4s ease;
+  }
+
+  .gauge.small .gauge-label {
+    font-size: 0.65rem;
   }
 
   /* Start button */
@@ -278,17 +307,41 @@
     <p class="version">web-speedtest version: {{VERSION}}</p>
   </header>
 
-  <div class="gauge-wrap">
-    <div class="gauge">
-      <span class="gauge-label" id="gaugeLabel">&nbsp;</span>
+  <div class="gauges" id="gauges">
+    <div class="gauge hidden" id="gaugePing">
+      <span class="gauge-label">PING</span>
       <svg viewBox="0 0 200 120">
         <path class="gauge-bg" d="M 20 110 A 80 80 0 0 1 180 110" />
-        <path class="gauge-fill" id="gaugeFill" d="M 20 110 A 80 80 0 0 1 180 110"
+        <path class="gauge-fill" d="M 20 110 A 80 80 0 0 1 180 110"
               stroke-dasharray="251.33" stroke-dashoffset="251.33" />
       </svg>
       <div class="gauge-value">
-        <div class="number" id="gaugeNumber">&mdash;</div>
-        <div class="unit" id="gaugeUnit">&nbsp;</div>
+        <div class="number">&mdash;</div>
+        <div class="unit">&nbsp;</div>
+      </div>
+    </div>
+    <div class="gauge hidden" id="gaugeDown">
+      <span class="gauge-label">DOWNLOAD</span>
+      <svg viewBox="0 0 200 120">
+        <path class="gauge-bg" d="M 20 110 A 80 80 0 0 1 180 110" />
+        <path class="gauge-fill" d="M 20 110 A 80 80 0 0 1 180 110"
+              stroke-dasharray="251.33" stroke-dashoffset="251.33" />
+      </svg>
+      <div class="gauge-value">
+        <div class="number">&mdash;</div>
+        <div class="unit">&nbsp;</div>
+      </div>
+    </div>
+    <div class="gauge hidden" id="gaugeUp">
+      <span class="gauge-label">UPLOAD</span>
+      <svg viewBox="0 0 200 120">
+        <path class="gauge-bg" d="M 20 110 A 80 80 0 0 1 180 110" />
+        <path class="gauge-fill" d="M 20 110 A 80 80 0 0 1 180 110"
+              stroke-dasharray="251.33" stroke-dashoffset="251.33" />
+      </svg>
+      <div class="gauge-value">
+        <div class="number">&mdash;</div>
+        <div class="unit">&nbsp;</div>
       </div>
     </div>
   </div>
@@ -330,27 +383,57 @@
 
   const ARC_LENGTH = 251.33;
 
-  const gaugeFill  = document.getElementById('gaugeFill');
-  const gaugeNum   = document.getElementById('gaugeNumber');
-  const gaugeUnit  = document.getElementById('gaugeUnit');
-  const gaugeLabel = document.getElementById('gaugeLabel');
-  const btnStart   = document.getElementById('btnStart');
-  const resPing    = document.getElementById('resPing');
-  const resDown    = document.getElementById('resDownload');
-  const resUp      = document.getElementById('resUpload');
-  const statusEl   = document.getElementById('status');
+  const btnStart = document.getElementById('btnStart');
+  const resPing  = document.getElementById('resPing');
+  const resDown  = document.getElementById('resDownload');
+  const resUp    = document.getElementById('resUpload');
+  const statusEl = document.getElementById('status');
 
-  function setGauge(fraction, colour) {
+  // Each gauge element and its sub-parts
+  const gauges = ['gaugePing', 'gaugeDown', 'gaugeUp'].map(function(id) {
+    const el = document.getElementById(id);
+    return {
+      el:     el,
+      fill:   el.querySelector('.gauge-fill'),
+      number: el.querySelector('.gauge-value .number'),
+      unit:   el.querySelector('.gauge-value .unit')
+    };
+  });
+
+  function setGauge(g, fraction, colour) {
     fraction = Math.max(0, Math.min(1, fraction));
-    gaugeFill.style.strokeDashoffset = ARC_LENGTH * (1 - fraction);
-    if (colour) gaugeFill.style.stroke = colour;
+    g.fill.style.strokeDashoffset = ARC_LENGTH * (1 - fraction);
+    if (colour) g.fill.style.stroke = colour;
   }
 
-  function resetGauge() {
-    setGauge(0, 'var(--accent)');
-    gaugeNum.textContent = '\u2014';
-    gaugeUnit.textContent = '\u00a0';
-    gaugeLabel.textContent = '\u00a0';
+  function showGauge(g) {
+    g.el.classList.remove('hidden');
+    // Shrink all other visible gauges
+    gauges.forEach(function(other) {
+      if (other !== g && !other.el.classList.contains('hidden')) {
+        other.el.classList.add('small');
+      }
+    });
+  }
+
+  function resetAllGauges() {
+    gauges.forEach(function(g) {
+      g.el.classList.add('hidden');
+      g.el.classList.remove('small');
+      g.fill.style.strokeDashoffset = ARC_LENGTH;
+      g.fill.style.stroke = 'var(--accent)';
+      g.number.textContent = '\u2014';
+      g.unit.textContent = '\u00a0';
+    });
+  }
+
+  function finaliseGauges() {
+    // At the end, make all gauges the same small size
+    gauges.forEach(function(g) {
+      if (!g.el.classList.contains('hidden')) {
+        g.el.classList.add('small');
+      }
+    });
   }
 
   function formatSpeed(bps) {
@@ -385,7 +468,8 @@
   }
 
   async function testPing() {
-    gaugeLabel.textContent = 'PING';
+    const g = gauges[0];
+    showGauge(g);
     statusEl.innerHTML = '<span class="spinner"></span> Testing ping\u2026';
     resPing.className = 'result-value active';
     resPing.innerHTML = '<span class="spinner"></span>';
@@ -400,9 +484,9 @@
 
         const avg = latencies.reduce((a, b) => a + b) / latencies.length;
         const fmt = formatLatency(avg);
-        gaugeNum.textContent = fmt.value;
-        gaugeUnit.textContent = fmt.unit;
-        setGauge(pingToFraction(avg), 'var(--accent)');
+        g.number.textContent = fmt.value;
+        g.unit.textContent = fmt.unit;
+        setGauge(g, pingToFraction(avg), 'var(--accent)');
         resPing.textContent = fmt.value + ' ' + fmt.unit;
       } catch (e) {
         // skip failed sample
@@ -423,7 +507,8 @@
   }
 
   async function testDownload() {
-    gaugeLabel.textContent = 'DOWNLOAD';
+    const g = gauges[1];
+    showGauge(g);
     statusEl.innerHTML = '<span class="spinner"></span> Testing download\u2026';
     resDown.className = 'result-value active';
     resDown.innerHTML = '<span class="spinner"></span>';
@@ -446,9 +531,9 @@
           const elapsed = (performance.now() - t0) / 1000;
           const bps = (totalReceived * 8) / Math.max(elapsed, 0.001);
           const fmt = formatSpeed(bps);
-          gaugeNum.textContent = fmt.value;
-          gaugeUnit.textContent = fmt.unit;
-          setGauge(speedToFraction(bps), 'var(--green)');
+          g.number.textContent = fmt.value;
+          g.unit.textContent = fmt.unit;
+          setGauge(g, speedToFraction(bps), 'var(--green)');
           resDown.textContent = fmt.value + ' ' + fmt.unit;
         }
       }
@@ -473,7 +558,8 @@
   }
 
   async function testUpload() {
-    gaugeLabel.textContent = 'UPLOAD';
+    const g = gauges[2];
+    showGauge(g);
     statusEl.innerHTML = '<span class="spinner"></span> Testing upload\u2026';
     resUp.className = 'result-value active';
     resUp.innerHTML = '<span class="spinner"></span>';
@@ -497,9 +583,9 @@
         const elapsed = (performance.now() - t0) / 1000;
         const bps = (completedBytes * 8) / Math.max(elapsed, 0.001);
         const fmt = formatSpeed(bps);
-        gaugeNum.textContent = fmt.value;
-        gaugeUnit.textContent = fmt.unit;
-        setGauge(speedToFraction(bps), 'var(--yellow)');
+        g.number.textContent = fmt.value;
+        g.unit.textContent = fmt.unit;
+        setGauge(g, speedToFraction(bps), 'var(--yellow)');
         resUp.textContent = fmt.value + ' ' + fmt.unit;
       }
 
@@ -512,10 +598,9 @@
       const elapsed = (performance.now() - t0) / 1000;
       const bps = (totalSize * 8) / Math.max(elapsed, 0.001);
       const fmt = formatSpeed(bps);
-
-      gaugeNum.textContent = fmt.value;
-      gaugeUnit.textContent = fmt.unit;
-      setGauge(speedToFraction(bps), 'var(--yellow)');
+      g.number.textContent = fmt.value;
+      g.unit.textContent = fmt.unit;
+      setGauge(g, speedToFraction(bps), 'var(--yellow)');
 
       resUp.textContent = fmt.value + ' ' + fmt.unit;
       resUp.className = 'result-value';
@@ -538,14 +623,14 @@
     resDown.className = 'result-value pending';
     resUp.textContent = '\u2014';
     resUp.className = 'result-value pending';
-    resetGauge();
+    resetAllGauges();
 
     await testPing();
     await testDownload();
     await testUpload();
 
+    finaliseGauges();
     statusEl.textContent = 'Test complete';
-    gaugeLabel.textContent = 'DONE';
     btnStart.disabled = false;
     btnStart.textContent = 'Test Again';
   };
