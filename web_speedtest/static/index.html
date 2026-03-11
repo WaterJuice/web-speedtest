@@ -83,26 +83,18 @@
   .gauges {
     display: flex;
     justify-content: center;
-    gap: 0.5rem;
+    gap: 2rem;
     margin-bottom: 2rem;
-    min-height: 140px;
-    align-items: flex-end;
   }
 
   .gauge {
     position: relative;
     width: 240px;
     height: 140px;
-    transition: width 0.4s ease, height 0.4s ease;
-  }
-
-  .gauge.small {
-    width: 160px;
-    height: 100px;
   }
 
   .gauge.hidden {
-    display: none;
+    visibility: hidden;
   }
 
   .gauge svg {
@@ -142,22 +134,12 @@
     font-variant-numeric: tabular-nums;
     letter-spacing: -0.03em;
     line-height: 1;
-    transition: font-size 0.4s ease;
-  }
-
-  .gauge.small .gauge-value .number {
-    font-size: 1.5rem;
   }
 
   .gauge-value .unit {
     font-size: 0.8rem;
     color: var(--text-dim);
     margin-top: 2px;
-    transition: font-size 0.4s ease;
-  }
-
-  .gauge.small .gauge-value .unit {
-    font-size: 0.65rem;
   }
 
   .gauge-label {
@@ -169,11 +151,6 @@
     color: var(--text-dim);
     text-transform: uppercase;
     letter-spacing: 0.08em;
-    transition: font-size 0.4s ease;
-  }
-
-  .gauge.small .gauge-label {
-    font-size: 0.65rem;
   }
 
   /* Start button */
@@ -409,31 +386,15 @@
 
   function showGauge(g) {
     g.el.classList.remove('hidden');
-    // Shrink all other visible gauges
-    gauges.forEach(function(other) {
-      if (other !== g && !other.el.classList.contains('hidden')) {
-        other.el.classList.add('small');
-      }
-    });
   }
 
   function resetAllGauges() {
     gauges.forEach(function(g) {
       g.el.classList.add('hidden');
-      g.el.classList.remove('small');
       g.fill.style.strokeDashoffset = ARC_LENGTH;
       g.fill.style.stroke = 'var(--accent)';
       g.number.textContent = '\u2014';
       g.unit.textContent = '\u00a0';
-    });
-  }
-
-  function finaliseGauges() {
-    // At the end, make all gauges the same small size
-    gauges.forEach(function(g) {
-      if (!g.el.classList.contains('hidden')) {
-        g.el.classList.add('small');
-      }
     });
   }
 
@@ -648,7 +609,6 @@
     await testDownload(durationMs);
     await testUpload(durationMs);
 
-    finaliseGauges();
     statusEl.textContent = 'Test complete';
     btnStart.disabled = false;
     btnStart.textContent = 'Test Again';
