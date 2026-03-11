@@ -411,23 +411,7 @@
     return { value: Math.round(ms), unit: 'ms' };
   }
 
-  // Map speed to 0-1 gauge (logarithmic scale: 1 Kbps to 10 Gbps)
-  function speedToFraction(bps) {
-    if (bps <= 0) return 0;
-    const minLog = Math.log10(1e3);     // 1 Kbps
-    const maxLog = Math.log10(10e9);    // 10 Gbps
-    const log = Math.log10(bps);
-    return Math.max(0, Math.min(1, (log - minLog) / (maxLog - minLog)));
-  }
-
-  // Map ping to 0-1 gauge (inverted: lower is better)
-  function pingToFraction(ms) {
-    if (ms <= 0) return 1;
-    const minLog = Math.log10(0.1);   // 0.1 ms
-    const maxLog = Math.log10(1000);  // 1000 ms
-    const log = Math.log10(ms);
-    return Math.max(0, Math.min(1, 1 - (log - minLog) / (maxLog - minLog)));
-  }
+  // Gauge shows test progress (0 = start, 1 = done), not speed magnitude
 
   async function testPing() {
     const g = gauges[0];
@@ -448,7 +432,7 @@
         const fmt = formatLatency(avg);
         g.number.textContent = fmt.value;
         g.unit.textContent = fmt.unit;
-        setGauge(g, pingToFraction(avg), 'var(--accent)');
+        setGauge(g, (i + 1) / PING_COUNT, 'var(--accent)');
         resPing.textContent = fmt.value + ' ' + fmt.unit;
       } catch (e) {
         // skip failed sample
@@ -498,7 +482,7 @@
               const fmt = formatSpeed(bps);
               g.number.textContent = fmt.value;
               g.unit.textContent = fmt.unit;
-              setGauge(g, speedToFraction(bps), 'var(--green)');
+              setGauge(g, Math.min(elapsed / (durationMs / 1000), 1), 'var(--green)');
               resDown.textContent = fmt.value + ' ' + fmt.unit;
             }
           }
@@ -515,6 +499,7 @@
       const elapsed = (performance.now() - t0) / 1000;
       const bps = (totalReceived * 8) / Math.max(elapsed, 0.001);
       const fmt = formatSpeed(bps);
+      setGauge(g, 1, 'var(--green)');
       resDown.textContent = fmt.value + ' ' + fmt.unit;
       resDown.className = 'result-value';
       return bps;
@@ -557,7 +542,7 @@
             const fmt = formatSpeed(bps);
             g.number.textContent = fmt.value;
             g.unit.textContent = fmt.unit;
-            setGauge(g, speedToFraction(bps), 'var(--yellow)');
+            setGauge(g, Math.min(elapsed / (durationMs / 1000), 1), 'var(--yellow)');
             resUp.textContent = fmt.value + ' ' + fmt.unit;
           } catch (e) {
             break; // AbortError expected when timer fires
@@ -574,7 +559,7 @@
       const fmt = formatSpeed(bps);
       g.number.textContent = fmt.value;
       g.unit.textContent = fmt.unit;
-      setGauge(g, speedToFraction(bps), 'var(--yellow)');
+      setGauge(g, 1, 'var(--yellow)');
       resUp.textContent = fmt.value + ' ' + fmt.unit;
       resUp.className = 'result-value';
       return bps;
