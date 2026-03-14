@@ -414,6 +414,12 @@
 
   // Gauge shows test progress (0 = start, 1 = done), not speed magnitude
 
+  function computeMedian(arr) {
+    var sorted = arr.slice().sort(function(a, b) { return a - b; });
+    var mid = Math.floor(sorted.length / 2);
+    return sorted.length % 2 ? sorted[mid] : (sorted[mid - 1] + sorted[mid]) / 2;
+  }
+
   async function testPing() {
     const g = gauges[0];
     showGauge(g);
@@ -421,44 +427,110 @@
     resPing.className = 'result-value active';
     resPing.innerHTML = '<span class="spinner"></span>';
 
+    // Use WebSocket for low-overhead ping measurement
+    var wsProto = location.protocol === 'https:' ? 'wss:' : 'ws:';
+    var wsUrl = wsProto + '//' + location.host + '/ws';
+
+    return new Promise(function(resolve) {
+      var latencies = [];
+      var pingIndex = 0;
+      var t0 = 0;
+      var ws;
+
+      function finish() {
+        try { ws.close(); } catch (e) { /* ignore */ }
+        if (latencies.length === 0) {
+          resPing.textContent = 'failed';
+          resPing.className = 'result-value';
+          resolve(null);
+          return;
+        }
+        var median = computeMedian(latencies);
+        var fmt = formatLatency(median);
+        resPing.textContent = fmt.value + ' ' + fmt.unit;
+        resPing.className = 'result-value';
+        resolve(median);
+      }
+
+      function sendNextPing() {
+        if (pingIndex >= PING_COUNT) {
+          finish();
+          return;
+        }
+        t0 = performance.now();
+        ws.send('ping');
+      }
+
+      try {
+        ws = new WebSocket(wsUrl);
+      } catch (e) {
+        // WebSocket not available — fall back to HTTP ping
+        resolve(testPingHTTP());
+        return;
+      }
+
+      ws.onopen = function() {
+        sendNextPing();
+      };
+
+      ws.onmessage = function(event) {
+        if (event.data === 'pong') {
+          var rtt = performance.now() - t0;
+          latencies.push(rtt);
+          pingIndex++;
+
+          var median = computeMedian(latencies);
+          var fmt = formatLatency(median);
+          g.number.textContent = fmt.value;
+          g.unit.textContent = fmt.unit;
+          setGauge(g, pingIndex / PING_COUNT, 'var(--accent)');
+          resPing.textContent = fmt.value + ' ' + fmt.unit;
+
+          sendNextPing();
+        }
+      };
+
+      ws.onerror = function() {
+        // WebSocket failed — fall back to HTTP ping
+        resolve(testPingHTTP());
+      };
+
+      // Safety timeout in case WebSocket hangs
+      setTimeout(function() {
+        if (pingIndex < PING_COUNT) finish();
+      }, 15000);
+    });
+  }
+
+  // HTTP fallback for ping (used by environments where WebSocket is unavailable)
+  async function testPingHTTP() {
+    const g = gauges[0];
     const latencies = [];
     for (let i = 0; i < PING_COUNT; i++) {
       try {
         const t0 = performance.now();
         const resp = await fetch('/api/ping?_=' + Date.now(), { cache: 'no-store' });
         var rtt = performance.now() - t0;
-
-        // Subtract server processing time if available (Server-Timing header)
         var st = resp.headers.get('Server-Timing');
         if (st) {
           var m = st.match(/dur=([\d.]+)/);
           if (m) rtt = Math.max(0, rtt - parseFloat(m[1]));
         }
         latencies.push(rtt);
-
-        // Use median for display (more robust than mean)
-        var sorted = latencies.slice().sort(function(a, b) { return a - b; });
-        var mid = Math.floor(sorted.length / 2);
-        var median = sorted.length % 2 ? sorted[mid] : (sorted[mid - 1] + sorted[mid]) / 2;
+        var median = computeMedian(latencies);
         var fmt = formatLatency(median);
         g.number.textContent = fmt.value;
         g.unit.textContent = fmt.unit;
         setGauge(g, (i + 1) / PING_COUNT, 'var(--accent)');
         resPing.textContent = fmt.value + ' ' + fmt.unit;
-      } catch (e) {
-        // skip failed sample
-      }
+      } catch (e) { /* skip */ }
     }
-
     if (latencies.length === 0) {
       resPing.textContent = 'failed';
       resPing.className = 'result-value';
       return null;
     }
-
-    var sorted = latencies.slice().sort(function(a, b) { return a - b; });
-    var mid = Math.floor(sorted.length / 2);
-    var median = sorted.length % 2 ? sorted[mid] : (sorted[mid - 1] + sorted[mid]) / 2;
+    var median = computeMedian(latencies);
     var fmt = formatLatency(median);
     resPing.textContent = fmt.value + ' ' + fmt.unit;
     resPing.className = 'result-value';

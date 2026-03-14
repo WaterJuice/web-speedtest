@@ -90,7 +90,8 @@ web_speedtest/
 ├── argbuilder.py     # Custom argparse wrapper (from cal-publish-python)
 ├── colour.py         # ANSI colour output (TTY-aware)
 ├── cli.py            # CLI commands and argument parsing
-├── server.py         # HTTP server with speed test API
+├── server.py         # Async HTTP server (asyncio) with WebSocket support
+├── websocket.py      # WebSocket protocol (RFC 6455) — handshake and framing
 ├── client.py         # CLI speed test client
 └── static/
     └── index.html    # Web UI (single-page app with embedded CSS/JS)
@@ -100,15 +101,17 @@ web_speedtest/
 
 ### Server Mode (`web-speedtest server`)
 
-- Uses Python's built-in `http.server` module — zero dependencies
+- Async HTTP server built on `asyncio.start_server` — zero dependencies
+- Hand-rolled HTTP request parsing and WebSocket support (RFC 6455)
 - Serves a web UI at `/` with a beautiful dark-themed single-page app
 - API endpoints:
-  - `GET /api/ping` — small JSON response for latency measurement
+  - `GET /api/ping` — small JSON response for latency measurement (CLI client)
   - `GET /api/download?size=N` — streams random bytes for download speed
   - `POST /api/upload` — accepts data for upload speed measurement
   - `GET /api/info` — server metadata (version, etc.)
+  - `WS /ws` — WebSocket endpoint for low-overhead browser ping measurement
 - Pre-generates a random chunk to avoid per-request entropy costs
-- Supports CORS for cross-origin browser requests
+- Supports HTTP keep-alive and CORS for cross-origin browser requests
 
 ### Client Mode (`web-speedtest client`)
 
@@ -127,16 +130,19 @@ web_speedtest/
 - Dark theme with animated gauge
 - Real-time progress during each test phase
 - Uses `ReadableStream` for live download progress
-- Logarithmic gauge scale (1 Kbps to 10 Gbps)
+- WebSocket ping with HTTP fallback for environments without WebSocket
 
 ## Key Design Decisions
 
-1. **Zero dependencies** — stdlib only (`http.server`, `urllib.request`, `json`, etc.)
-2. **Single HTML file** — web UI is one self-contained file with embedded CSS/JS
-3. **Streaming download** — random data streamed in chunks, not generated all at once
-4. **Pre-generated random chunk** — single 64 KB chunk reused for download speed
-5. **argbuilder for CLI** — custom argparse wrapper, consistent with other WaterJuice projects
-6. **Dual mode** — same package provides both server and client
+1. **Zero dependencies** — stdlib only (`asyncio`, `urllib.request`, `json`, etc.)
+2. **Async server** — `asyncio.start_server` with hand-rolled HTTP parsing and WebSocket
+3. **Single HTML file** — web UI is one self-contained file with embedded CSS/JS
+4. **WebSocket ping** — persistent connection for accurate latency, with HTTP fallback
+5. **Streaming download** — random data streamed in chunks, not generated all at once
+6. **Pre-generated random chunk** — single 64 KB chunk reused for download speed
+7. **Warmup exclusion** — first 2s of download/upload discarded for steady-state accuracy
+8. **argbuilder for CLI** — custom argparse wrapper, consistent with other WaterJuice projects
+9. **Dual mode** — same package provides both server and client
 
 ## Testing Changes
 
