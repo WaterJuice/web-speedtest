@@ -36,7 +36,7 @@
 
   .container {
     width: 100%;
-    max-width: 560px;
+    max-width: 680px;
   }
 
   header {
@@ -89,8 +89,8 @@
 
   .gauge {
     position: relative;
-    width: 240px;
-    height: 140px;
+    width: 300px;
+    height: 175px;
   }
 
   .gauge.hidden {
@@ -355,9 +355,10 @@
 
   const PING_COUNT       = 10;
   const TEST_DURATION    = 8000;              // ms per test phase
+  const WARMUP_MS        = 2000;              // discard first 2s of data (TCP slow-start)
   const PARALLEL_STREAMS = 6;
   const STREAM_CHUNK     = 100 * 1024 * 1024; // 100 MB per download request (loop until aborted)
-  const UPLOAD_CHUNK     = 1 * 1024 * 1024;   // 1 MB per upload request (loop until aborted)
+  const UPLOAD_CHUNK     = 10 * 1024 * 1024;  // 10 MB per upload request (loop until aborted)
 
   const ARC_LENGTH = 251.33;
 
@@ -424,12 +425,22 @@
     for (let i = 0; i < PING_COUNT; i++) {
       try {
         const t0 = performance.now();
-        await fetch('/api/ping?_=' + Date.now(), { cache: 'no-store' });
-        const ms = performance.now() - t0;
-        latencies.push(ms);
+        const resp = await fetch('/api/ping?_=' + Date.now(), { cache: 'no-store' });
+        var rtt = performance.now() - t0;
 
-        const avg = latencies.reduce((a, b) => a + b) / latencies.length;
-        const fmt = formatLatency(avg);
+        // Subtract server processing time if available (Server-Timing header)
+        var st = resp.headers.get('Server-Timing');
+        if (st) {
+          var m = st.match(/dur=([\d.]+)/);
+          if (m) rtt = Math.max(0, rtt - parseFloat(m[1]));
+        }
+        latencies.push(rtt);
+
+        // Use median for display (more robust than mean)
+        var sorted = latencies.slice().sort(function(a, b) { return a - b; });
+        var mid = Math.floor(sorted.length / 2);
+        var median = sorted.length % 2 ? sorted[mid] : (sorted[mid - 1] + sorted[mid]) / 2;
+        var fmt = formatLatency(median);
         g.number.textContent = fmt.value;
         g.unit.textContent = fmt.unit;
         setGauge(g, (i + 1) / PING_COUNT, 'var(--accent)');
@@ -445,11 +456,13 @@
       return null;
     }
 
-    const avg = latencies.reduce((a, b) => a + b) / latencies.length;
-    const fmt = formatLatency(avg);
+    var sorted = latencies.slice().sort(function(a, b) { return a - b; });
+    var mid = Math.floor(sorted.length / 2);
+    var median = sorted.length % 2 ? sorted[mid] : (sorted[mid - 1] + sorted[mid]) / 2;
+    var fmt = formatLatency(median);
     resPing.textContent = fmt.value + ' ' + fmt.unit;
     resPing.className = 'result-value';
-    return avg;
+    return median;
   }
 
   async function testDownload(durationMs) {
@@ -463,6 +476,8 @@
       const controller = new AbortController();
       const timer = setTimeout(() => controller.abort(), durationMs);
       let totalReceived = 0;
+      let steadyReceived = 0;   // bytes received after warmup
+      let steadyStart = 0;      // timestamp when warmup ended
       const t0 = performance.now();
 
       async function downloadStream(idx) {
@@ -477,12 +492,29 @@
               const { done, value } = await reader.read();
               if (done) break;
               totalReceived += value.byteLength;
-              const elapsed = (performance.now() - t0) / 1000;
-              const bps = (totalReceived * 8) / Math.max(elapsed, 0.001);
+              const now = performance.now();
+              const elapsedMs = now - t0;
+
+              // Track steady-state bytes (after warmup)
+              if (elapsedMs >= WARMUP_MS) {
+                if (!steadyStart) steadyStart = now;
+                steadyReceived += value.byteLength;
+              }
+
+              // Display uses steady-state speed if available, otherwise total
+              var elapsed, bytes;
+              if (steadyStart) {
+                elapsed = (now - steadyStart) / 1000;
+                bytes = steadyReceived;
+              } else {
+                elapsed = elapsedMs / 1000;
+                bytes = totalReceived;
+              }
+              const bps = (bytes * 8) / Math.max(elapsed, 0.001);
               const fmt = formatSpeed(bps);
               g.number.textContent = fmt.value;
               g.unit.textContent = fmt.unit;
-              setGauge(g, Math.min(elapsed / (durationMs / 1000), 1), 'var(--green)');
+              setGauge(g, Math.min(elapsedMs / durationMs, 1), 'var(--green)');
               resDown.textContent = fmt.value + ' ' + fmt.unit;
             }
           }
@@ -496,8 +528,16 @@
       await Promise.all(streams);
       clearTimeout(timer);
 
-      const elapsed = (performance.now() - t0) / 1000;
-      const bps = (totalReceived * 8) / Math.max(elapsed, 0.001);
+      // Final result: use steady-state measurement if we got past warmup
+      var finalElapsed, finalBytes;
+      if (steadyStart) {
+        finalElapsed = (performance.now() - steadyStart) / 1000;
+        finalBytes = steadyReceived;
+      } else {
+        finalElapsed = (performance.now() - t0) / 1000;
+        finalBytes = totalReceived;
+      }
+      const bps = (finalBytes * 8) / Math.max(finalElapsed, 0.001);
       const fmt = formatSpeed(bps);
       setGauge(g, 1, 'var(--green)');
       resDown.textContent = fmt.value + ' ' + fmt.unit;
@@ -521,6 +561,8 @@
       const controller = new AbortController();
       setTimeout(() => controller.abort(), durationMs);
       let completedBytes = 0;
+      let steadyBytes = 0;
+      let steadyStart = 0;
       const t0 = performance.now();
 
       // Smoothly advance the gauge arc based on elapsed time, independent of request completions
@@ -543,8 +585,25 @@
               signal: controller.signal
             });
             completedBytes += UPLOAD_CHUNK;
-            const elapsed = (performance.now() - t0) / 1000;
-            const bps = (completedBytes * 8) / Math.max(elapsed, 0.001);
+            const now = performance.now();
+            const elapsedMs = now - t0;
+
+            // Track steady-state bytes (after warmup)
+            if (elapsedMs >= WARMUP_MS) {
+              if (!steadyStart) steadyStart = now;
+              steadyBytes += UPLOAD_CHUNK;
+            }
+
+            // Display uses steady-state speed if available
+            var elapsed, bytes;
+            if (steadyStart) {
+              elapsed = (now - steadyStart) / 1000;
+              bytes = steadyBytes;
+            } else {
+              elapsed = elapsedMs / 1000;
+              bytes = completedBytes;
+            }
+            const bps = (bytes * 8) / Math.max(elapsed, 0.001);
             const fmt = formatSpeed(bps);
             g.number.textContent = fmt.value;
             g.unit.textContent = fmt.unit;
@@ -560,8 +619,16 @@
       await Promise.all(streams);
       clearInterval(gaugeTimer);
 
-      const elapsed = (performance.now() - t0) / 1000;
-      const bps = (completedBytes * 8) / Math.max(elapsed, 0.001);
+      // Final result: use steady-state measurement if we got past warmup
+      var finalElapsed, finalBytes;
+      if (steadyStart) {
+        finalElapsed = (performance.now() - steadyStart) / 1000;
+        finalBytes = steadyBytes;
+      } else {
+        finalElapsed = (performance.now() - t0) / 1000;
+        finalBytes = completedBytes;
+      }
+      const bps = (finalBytes * 8) / Math.max(finalElapsed, 0.001);
       const fmt = formatSpeed(bps);
       g.number.textContent = fmt.value;
       g.unit.textContent = fmt.unit;

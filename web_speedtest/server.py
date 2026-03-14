@@ -95,6 +95,7 @@ class SpeedTestHandler(BaseHTTPRequestHandler):
         self.send_header("Access-Control-Allow-Origin", "*")
         self.send_header("Access-Control-Allow-Methods", "GET, POST, OPTIONS")
         self.send_header("Access-Control-Allow-Headers", "Content-Type")
+        self.send_header("Access-Control-Expose-Headers", "Server-Timing")
         self.send_header("Access-Control-Max-Age", "86400")
         self.end_headers()
 
@@ -189,8 +190,25 @@ class SpeedTestHandler(BaseHTTPRequestHandler):
 
     # ------------------------------------------------------------------------------------
     def _handle_ping(self) -> None:
-        """Return a small JSON payload for latency measurement."""
-        self._send_json({"timestamp": time.time()})
+        """Return a small JSON payload for latency measurement.
+
+        Includes a Server-Timing header so the client can subtract server
+        processing time from the round-trip to get a more accurate network
+        latency figure.
+        """
+        t0 = time.monotonic()
+        data = json.dumps({"timestamp": time.time()}).encode("utf-8")
+        processing_ms = (time.monotonic() - t0) * 1000
+
+        self.send_response(200)
+        self.send_header("Content-Type", "application/json")
+        self.send_header("Content-Length", str(len(data)))
+        self.send_header("Access-Control-Allow-Origin", "*")
+        self.send_header("Access-Control-Expose-Headers", "Server-Timing")
+        self.send_header("Cache-Control", "no-store")
+        self.send_header("Server-Timing", f"processing;dur={processing_ms:.2f}")
+        self.end_headers()
+        self.wfile.write(data)
 
     # ------------------------------------------------------------------------------------
     def _handle_download(self, query: str) -> None:
