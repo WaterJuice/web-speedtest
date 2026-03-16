@@ -1,4 +1,4 @@
-# web-speedtest 1.0.0 Beta 8 — 14 Mar 2026
+# web-speedtest 1.0.0 Beta 9 — 16 Mar 2026
 
 - Initial release
 - Server mode with web UI for browser-based speed testing

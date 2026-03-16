@@ -358,7 +358,7 @@
   const WARMUP_MS        = 2000;              // discard first 2s of data (TCP slow-start)
   const PARALLEL_STREAMS = 6;
   const STREAM_CHUNK     = 100 * 1024 * 1024; // 100 MB per download request (loop until aborted)
-  const UPLOAD_CHUNK     = 10 * 1024 * 1024;  // 10 MB per upload request (loop until aborted)
+  const UPLOAD_CHUNK     = 256 * 1024;        // 256 KB per upload request (small so requests complete quickly)
 
   const ARC_LENGTH = 251.33;
 
