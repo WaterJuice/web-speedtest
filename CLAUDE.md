@@ -9,6 +9,8 @@ web-speedtest is a network speed test tool with two modes:
 - **Server mode** — an HTTP server that provides a beautiful web UI for browser-based speed testing (ping, download, upload) and API endpoints for programmatic access
 - **Client mode** — a CLI tool that connects to a web-speedtest server and measures ping, download, and upload speeds from the terminal
 
+The project is written in Go and distributed as platform-specific Python wheels via PyPI (using bin2whl). This means users install it with `pip install web-speedtest` or `uvx web-speedtest`, but the binary is a statically-linked Go executable — no Python runtime required at execution time.
+
 ## Language and Spelling
 
 Use **Australian English** throughout:
@@ -19,90 +21,101 @@ Use **Australian English** throughout:
 
 ## Code Style
 
-### Python Files
+### Go Files
 
-Every Python file should have:
+Every Go file should have:
 1. A file header block with description and version history
 2. Section headers separating major sections (Imports, Constants, Functions, etc.)
-3. Horizontal separators (92 chars of `-`) above each function definition
+3. Horizontal separators (87 dashes after `// `, 90 chars total) above each function definition
 
 Example structure:
-```python
-# ----------------------------------------------------------------------------------------
-#   filename.py
-#   -----------
-#
-#   Brief description of what this module does.
-#
-#   (c) 2026 WaterJuice — Released under the Unlicense; see LICENSE.
-#
-#   Version History
-#   ---------------
-#   Mar 2026 - Created
-# ----------------------------------------------------------------------------------------
+```go
+// ---------------------------------------------------------------------------------------
+//
+//	filename.go
+//	-----------
+//
+//	Brief description of what this module does.
+//
+//	(c) 2026 WaterJuice — Released under the Unlicense; see LICENSE.
+//
+//	Version History
+//	---------------
+//	Mar 2026 - Created
+//
+// ---------------------------------------------------------------------------------------
+package internal
 
-# ----------------------------------------------------------------------------------------
-#   Imports
-# ----------------------------------------------------------------------------------------
+// ---------------------------------------------------------------------------------------
+//
+//	Imports
+//
+// ---------------------------------------------------------------------------------------
 
-import sys
+import (
+	"fmt"
+)
 
-# ----------------------------------------------------------------------------------------
-#   Functions
-# ----------------------------------------------------------------------------------------
+// ---------------------------------------------------------------------------------------
+//
+//	Functions
+//
+// ---------------------------------------------------------------------------------------
 
-
-# ----------------------------------------------------------------------------------------
-def my_function() -> None:
-    """Docstring here."""
-    pass
+// ---------------------------------------------------------------------------------------
+// MyFunction does something.
+func MyFunction() {
+}
 ```
 
 ### General
 
-- Python 3.12+ (do **not** use `from __future__ import annotations`)
-- Use type hints throughout
-- Prefer pathlib.Path over os.path
-- Single-line imports, no blank lines between import groups (configured in pyproject.toml)
-- Run `make format` to auto-fix import ordering
+- Go 1.25+
 - Zero external dependencies — stdlib only
-- CLI uses argbuilder.py (custom argparse wrapper), not click or argparse directly
+- Use `gofmt` for formatting, `go vet` for linting
+- Run `make format` to auto-fix formatting
+- Run `make check` to verify formatting and lint
+- CLI uses manual argument parsing (no flag package, no external CLI libs)
+- TTY-aware ANSI colours for terminal output
 
 ## Common Commands
 
 ```bash
 make help       # Show all available targets
-make check      # Run ruff + pyright
-make format     # Auto-fix and format code
-make build      # Build wheel + docs into output/
+make check      # Run gofmt check + go vet
+make format     # Auto-format Go source with gofmt
+make go-build   # Cross-compile for all 6 platforms
+make build      # Full build: check, go-build, docs, platform wheels
 make docs       # Build HTML documentation into html/
 make clean      # Remove build artefacts
-make dev        # Just create dev (.venv) setup
+make dev        # Build for current platform + symlink into .venv/bin/
+make run ARGS="server --port 3000"  # Build and run with arguments
 ```
 
 ## Project Structure
 
 ```
-web_speedtest/
-├── __init__.py       # Package init, exports __version__
-├── __main__.py       # Entry point for python -m web_speedtest
-├── version.py        # Version string handling
-├── argbuilder.py     # Custom argparse wrapper (from cal-publish-python)
-├── colour.py         # ANSI colour output (TTY-aware)
-├── cli.py            # CLI commands and argument parsing
-├── server.py         # Async HTTP server (asyncio) with WebSocket support
-├── websocket.py      # WebSocket protocol (RFC 6455) — handshake and framing
-├── client.py         # CLI speed test client
+main.go                 # Entry point, calls internal.Run(Version)
+go.mod                  # Go module definition
+internal/
+├── cli.go              # CLI argument parsing, help text, colour helpers
+├── server.go           # HTTP server with embedded web UI and WebSocket
+├── client.go           # CLI speed test client
+├── websocket.go        # WebSocket protocol (RFC 6455) — handshake and framing
 └── static/
-    └── index.html    # Web UI (single-page app with embedded CSS/JS)
+    └── index.html      # Web UI (single-page app with embedded CSS/JS)
+wheel.json              # bin2whl configuration for platform wheels
+pyproject.toml          # Minimal — just for uv dev dependencies
+Makefile                # Build orchestration
 ```
 
 ## Architecture
 
 ### Server Mode (`web-speedtest server`)
 
-- Async HTTP server built on `asyncio.start_server` — zero dependencies
-- Hand-rolled HTTP request parsing and WebSocket support (RFC 6455)
+- HTTP server built on `net/http` — zero dependencies
+- Hand-rolled WebSocket support via `http.Hijacker` (RFC 6455)
+- Web UI embedded at compile time using `//go:embed`
 - Serves a web UI at `/` with a beautiful dark-themed single-page app
 - API endpoints:
   - `GET /api/ping` — small JSON response for latency measurement (CLI client)
@@ -111,53 +124,73 @@ web_speedtest/
   - `GET /api/info` — server metadata (version, etc.)
   - `WS /ws` — WebSocket endpoint for low-overhead browser ping measurement
 - Pre-generates a random chunk to avoid per-request entropy costs
-- Supports HTTP keep-alive and CORS for cross-origin browser requests
+- Supports CORS for cross-origin browser requests
 
 ### Client Mode (`web-speedtest client`)
 
-- Uses `urllib.request` — zero dependencies
+- Uses `net/http` — zero dependencies
 - Connects to any web-speedtest server
 - Measures:
   - Ping: average of 10 round-trip samples to `/api/ping`
-  - Download: streams 25 MB from `/api/download` and measures throughput
-  - Upload: sends 10 MB to `/api/upload` and measures throughput
-- Displays live progress with a progress bar
+  - Download: parallel streams from `/api/download` measuring throughput
+  - Upload: parallel streams to `/api/upload` measuring throughput
+- Displays live progress with a progress bar (download)
 - Coloured terminal output with summary
 
 ### Web UI
 
 - Single HTML file with embedded CSS and JavaScript
-- Dark theme with animated gauge
+- Dark theme with animated SVG gauges
 - Real-time progress during each test phase
-- Uses `ReadableStream` for live download progress
-- WebSocket ping with HTTP fallback for environments without WebSocket
+- Uses WebSocket for ping with HTTP fallback
+- Embedded in the Go binary via `//go:embed`
 
 ## Key Design Decisions
 
-1. **Zero dependencies** — stdlib only (`asyncio`, `urllib.request`, `json`, etc.)
-2. **Async server** — `asyncio.start_server` with hand-rolled HTTP parsing and WebSocket
-3. **Single HTML file** — web UI is one self-contained file with embedded CSS/JS
-4. **WebSocket ping** — persistent connection for accurate latency, with HTTP fallback
-5. **Streaming download** — random data streamed in chunks, not generated all at once
-6. **Pre-generated random chunk** — single 64 KB chunk reused for download speed
-7. **Warmup exclusion** — first 2s of download/upload discarded for steady-state accuracy
-8. **argbuilder for CLI** — custom argparse wrapper, consistent with other WaterJuice projects
-9. **Dual mode** — same package provides both server and client
+1. **Go binary, PyPI distribution** — statically-linked Go binary wrapped in platform wheels via bin2whl
+2. **Zero dependencies** — Go stdlib only
+3. **net/http server** — idiomatic Go HTTP server with WebSocket via Hijack
+4. **Single HTML file** — web UI is one self-contained file with embedded CSS/JS
+5. **go:embed** — HTML compiled into the binary, no external files needed at runtime
+6. **WebSocket ping** — persistent connection for accurate latency, with HTTP fallback
+7. **Streaming download** — random data streamed in chunks, not generated all at once
+8. **Pre-generated random chunk** — single 64 KB chunk reused for download speed
+9. **Manual CLI parsing** — no flag package, consistent with tls-switch project conventions
+10. **Dual mode** — same binary provides both server and client
+
+## Build & Distribution
+
+- Cross-compiled for 6 platforms: macOS (arm64/amd64), Linux (arm64/amd64), Windows (arm64/amd64)
+- All binaries are statically linked (`CGO_ENABLED=0`)
+- Version injected at build time via `-ldflags -X main.Version=...`
+- Platform wheels built using `bin2whl` from `wheel.json` config
+- Published to PyPI via `cal-publish-python`
+
+### Platform Wheel Tags
+
+| Platform       | Wheel Tag                       |
+|---------------|---------------------------------|
+| macOS arm64   | `macosx_11_0_arm64`           |
+| macOS amd64   | `macosx_10_12_x86_64`         |
+| Linux amd64   | `manylinux_2_17_x86_64`       |
+| Linux arm64   | `manylinux_2_17_aarch64`      |
+| Windows amd64 | `win_amd64`                    |
+| Windows arm64 | `win_arm64`                    |
 
 ## Testing Changes
 
 After making changes:
-1. Run `make check` to verify linting and types pass
-2. Run `make build` to verify the full build works
-3. Test server: `uv run web-speedtest server`
-4. Test client: `uv run web-speedtest client localhost:8080`
+1. Run `make check` to verify formatting and vet pass
+2. Run `make go-build` to verify cross-compilation works
+3. Test server: `make run ARGS="server"`
+4. Test client: `make run ARGS="client localhost:8080"`
 
 ## Versioning
 
-- Version is derived from git tags via uv-dynamic-versioning
+- Version is derived from git tags via `git describe --tags --always`
 - Create a tag like `1.0.0` before running `make build` for a release (no `v` prefix)
-- The build generates `_version.py` at build time, which is not committed
-- If no tags exist, version falls back to "dev"
+- Version is injected at build time via `-ldflags`
+- Falls back to "dev" if no tags exist
 
 ## Commits
 

@@ -407,7 +407,7 @@
   }
 
   function formatLatency(ms) {
-    if (ms < 1) return { value: (ms * 1000).toFixed(0), unit: '\u00b5s' };
+    if (ms < 10) return { value: ms.toFixed(2), unit: 'ms' };
     if (ms < 100) return { value: ms.toFixed(1), unit: 'ms' };
     return { value: Math.round(ms), unit: 'ms' };
   }

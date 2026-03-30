@@ -15,12 +15,8 @@ Running a quick network speed test usually means visiting a third-party website 
 - **Upload test** — measure upload throughput
 - **Web UI** — dark-themed single-page app with animated gauge and live progress
 - **API endpoints** — programmatic access for custom integrations
-- **Zero dependencies** — stdlib only
+- **Zero dependencies** — single statically-linked Go binary
 - **Cross-platform** — works on macOS, Linux, and Windows
-
-## Requirements
-
-- Python 3.12+
 
 ## Quick Start
 
@@ -54,7 +50,7 @@ See the [Usage](usage.md) page for full details on all commands and API endpoint
 
 ## How It Works
 
-The server uses Python's built-in `http.server` module to serve both a web UI and API endpoints. The web UI is a single-page app with embedded CSS and JavaScript — no build step or frontend dependencies needed.
+The server is a single statically-linked Go binary using Go's built-in `net/http` package to serve both a web UI and API endpoints. The web UI is a single-page app with embedded CSS and JavaScript, compiled into the binary at build time via `go:embed` — no external files needed at runtime.
 
 Speed tests work by:
 
@@ -62,4 +58,4 @@ Speed tests work by:
 2. **Download** — streaming random data from the server and measuring throughput
 3. **Upload** — sending random data to the server and measuring throughput
 
-The CLI client uses `urllib.request` to hit the same API endpoints, providing a terminal-based alternative to the browser UI.
+The CLI client uses Go's `net/http` to hit the same API endpoints, providing a terminal-based alternative to the browser UI.

@@ -19,6 +19,7 @@ Starts an HTTP server that serves the web UI and API endpoints. Open the display
 | `--host`, `-H`  | Address to bind to (default: `0.0.0.0`)             |
 | `--port`, `-p`  | Port to listen on (default: `8080`)                 |
 | `--name`, `-n`  | Server display name shown in the web UI (default: `Speed Test`) |
+| `--duration`, `-d` | Duration of each test phase in seconds (default: `8`) |
 | `--quiet`, `-q` | Suppress request logging                             |
 
 ### Web UI
@@ -44,7 +45,7 @@ Returns a small JSON payload for latency measurement.
 
 #### `GET /api/download?size=N`
 
-Streams random bytes for download speed measurement. The `size` parameter specifies the number of bytes to send (default: 25 MB, maximum: 100 MB).
+Streams random bytes for download speed measurement. The `size` parameter specifies the number of bytes to send (default: 100 MB, maximum: 100 MB).
 
 #### `POST /api/upload`
 
@@ -59,7 +60,7 @@ Accepts a body of data and returns the size received and duration.
 Returns server metadata.
 
 ```json
-{"version": "1.0.0", "server": "web-speedtest", "name": "Speed Test"}
+{"version": "1.0.0", "server": "web-speedtest", "name": "Speed Test", "test_duration": 8}
 ```
 
 All API endpoints include `Access-Control-Allow-Origin: *` for cross-origin browser requests.
@@ -84,8 +85,8 @@ web-speedtest localhost:8080
 The client runs three tests in sequence:
 
 1. **Ping** — sends 10 small requests and reports the average round-trip latency
-2. **Download** — streams 25 MB from the server and reports throughput in Mbps
-3. **Upload** — sends 10 MB to the server and reports throughput in Mbps
+2. **Download** — streams 25 MB from the server using 6 parallel streams and reports throughput
+3. **Upload** — sends 10 MB to the server using 6 parallel streams and reports throughput
 
 Progress is displayed in real-time with a progress bar during the download test.
 

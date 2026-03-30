@@ -1,0 +1,20 @@
+{
+    "name": "web-speedtest",
+    "description": "Network speed test — server with web UI and CLI client",
+    "author": "WaterJuice",
+    "license": "Unlicense",
+    "homepage": "https://github.com/WaterJuice/web-speedtest",
+    "readme": "ReadMe.md",
+    "classifiers": [
+        "Programming Language :: Go"
+    ],
+    "binaries": {
+        "macos_arm64": "dist/web-speedtest-darwin-arm64",
+        "macos_amd64": "dist/web-speedtest-darwin-amd64",
+        "linux_amd64": "dist/web-speedtest-linux-amd64",
+        "linux_arm64": "dist/web-speedtest-linux-arm64",
+        "windows_amd64": "dist/web-speedtest-windows-amd64.exe",
+        "windows_arm64": "dist/web-speedtest-windows-arm64.exe"
+    },
+    "output-dir": "output"
+}

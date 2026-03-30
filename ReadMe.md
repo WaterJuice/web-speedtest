@@ -2,7 +2,7 @@
 
 A network speed test with a web UI and CLI client — measure ping, download, and upload speeds.
 
-web-speedtest provides two modes: a server that hosts a beautiful browser-based speed test, and a CLI client for quick terminal-based measurements. Both use the same API, and the entire tool runs on stdlib only — zero external dependencies.
+web-speedtest provides two modes: a server that hosts a beautiful browser-based speed test, and a CLI client for quick terminal-based measurements. Both use the same API, and the entire tool is a single statically-linked binary — zero runtime dependencies.
 
 ## Features
 
@@ -13,13 +13,9 @@ web-speedtest provides two modes: a server that hosts a beautiful browser-based 
 - **Upload test** — time-based upload throughput measurement
 - **Web UI** — dark-themed single-page app with animated gauges and live progress
 - **API endpoints** — programmatic access for custom integrations
-- **Zero dependencies** — stdlib only, no external packages required
+- **Zero dependencies** — single statically-linked Go binary
 - **Coloured output** — TTY-aware ANSI colours for CLI results
 - **Cross-platform** — works on macOS, Linux, and Windows
-
-## Requirements
-
-- Python 3.12+
 
 ## Installation
 
@@ -80,7 +76,7 @@ The server provides these endpoints for programmatic access:
 # Set up development environment
 make dev
 
-# Run linting and type checking
+# Run linting and format checking
 make check
 
 # Auto-format code
