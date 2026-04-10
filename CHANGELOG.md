@@ -1,25 +1,18 @@
-# web-speedtest 1.0.0 Beta 10 — 30 Mar 2026
-
-- Rewritten from Python to Go for single-binary distribution
-- Distributed as platform-specific wheels via PyPI (using bin2whl)
-- Zero runtime dependencies — single statically-linked binary
-- Cross-compiled for macOS (arm64/amd64), Linux (arm64/amd64), Windows (arm64/amd64)
-- HTTP server built on Go's net/http with hand-rolled WebSocket (RFC 6455)
-- Web UI embedded in binary via go:embed
-- All existing functionality preserved: server, client, web UI, API endpoints
-- Identical CLI interface and web UI appearance
-
-# web-speedtest 1.0.0 Beta 9 — 16 Mar 2026
+# web-speedtest 1.0.0 Beta 11 — 10 Apr 2026
 
 - Initial release
-- Server mode with web UI for browser-based speed testing
-- Client mode for CLI-based speed testing
-- Ping, download, and upload measurements
-- Zero external dependencies
-- Asyncio-based server (replaces http.server/ThreadingHTTPServer)
-- WebSocket ping measurement for low-overhead latency (with HTTP fallback)
-- Hand-rolled WebSocket implementation (RFC 6455) — stdlib only
-- Server-Timing header on HTTP ping endpoint for CLI client accuracy
-- Warmup exclusion (first 2s discarded) for download and upload accuracy
+- Server mode — HTTP server with embedded web UI for browser-based speed testing
+- Client mode — CLI tool that measures ping, download, and upload from any web-speedtest server
+- Web UI with animated gauges, dark theme, and live progress
+- Copy test results from the web UI to the clipboard as text or as a PNG image
+- WebSocket ping for low-overhead latency measurement, with HTTP fallback
+- Server-Timing header on the HTTP ping endpoint so the CLI client can subtract server processing time
+- Warmup exclusion (first 2 seconds discarded) for download/upload accuracy
 - Median-based ping reporting for outlier robustness
-- Larger gauge dials in web UI
+- Parallel streams (6) for both download and upload tests
+- Hand-rolled WebSocket implementation (RFC 6455) — stdlib only
+- API endpoints: `/api/ping`, `/api/download`, `/api/upload`, `/api/info`, `/ws`
+- Beta ribbon shown automatically on pre-release builds, hidden on full `X.Y.Z` releases
+- Single statically-linked Go binary with zero runtime dependencies
+- Distributed as platform-specific Python wheels via PyPI (using bin2whl)
+- Cross-platform: macOS, Linux, and Windows on both arm64 and amd64

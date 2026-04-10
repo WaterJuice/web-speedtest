@@ -77,6 +77,11 @@
     padding: 4px 40px;
     transform: rotate(-45deg);
     box-shadow: 0 2px 6px rgba(0, 0, 0, 0.4);
+    opacity: 0.5;
+  }
+
+  .beta-ribbon.hidden {
+    display: none;
   }
 
   /* Gauges */
@@ -153,10 +158,13 @@
     letter-spacing: 0.08em;
   }
 
-  /* Start button */
+  /* Start button row (also holds copy buttons once results exist) */
   .start-wrap {
     display: flex;
     justify-content: center;
+    align-items: center;
+    gap: 0.75rem;
+    flex-wrap: wrap;
     margin-bottom: 2rem;
   }
 
@@ -255,6 +263,39 @@
     min-height: 1.2em;
   }
 
+  /* Copy results buttons (appear beside the Test Again button) */
+  .btn-copy {
+    background: transparent;
+    color: var(--text-dim);
+    border: 1px solid var(--border);
+    padding: 0.5rem 1.25rem;
+    border-radius: 9999px;
+    font-size: 0.8rem;
+    font-weight: 500;
+    cursor: pointer;
+    transition: all 0.2s ease;
+    letter-spacing: 0.02em;
+    display: none;
+    /* Fixed width so "Copied!" / "Copy failed" don't reflow the row */
+    min-width: 9.5rem;
+    text-align: center;
+  }
+
+  .btn-copy.visible {
+    display: inline-block;
+  }
+
+  .btn-copy:hover {
+    color: var(--text);
+    border-color: var(--accent);
+    background: var(--surface-hover);
+  }
+
+  .btn-copy.copied {
+    color: var(--green);
+    border-color: var(--green);
+  }
+
   /* Spinner for active test */
   @keyframes spin {
     to { transform: rotate(360deg); }
@@ -275,7 +316,7 @@
 </head>
 <body>
 
-<div class="beta-ribbon">Beta</div>
+<div class="beta-ribbon" id="betaRibbon">Beta</div>
 
 <div class="container">
   <header>
@@ -324,7 +365,9 @@
   </div>
 
   <div class="start-wrap">
+    <button class="btn-copy" id="btnCopyText" type="button" onclick="copyResultsText()">Copy as Text</button>
     <button class="btn-start" id="btnStart" onclick="startTest()">Start Test</button>
+    <button class="btn-copy" id="btnCopyImage" type="button" onclick="copyResultsImage()">Copy as Image</button>
   </div>
 
   <div class="results">
@@ -359,14 +402,30 @@
   const PARALLEL_STREAMS = 6;
   const STREAM_CHUNK     = 100 * 1024 * 1024; // 100 MB per download request (loop until aborted)
   const UPLOAD_CHUNK     = 256 * 1024;        // 256 KB per upload request (small so requests complete quickly)
+  const RESULT_UPDATE_MS = 500;               // throttle result panel text updates
 
   const ARC_LENGTH = 251.33;
 
-  const btnStart = document.getElementById('btnStart');
-  const resPing  = document.getElementById('resPing');
-  const resDown  = document.getElementById('resDownload');
-  const resUp    = document.getElementById('resUpload');
-  const statusEl = document.getElementById('status');
+  const btnStart    = document.getElementById('btnStart');
+  const resPing     = document.getElementById('resPing');
+  const resDown     = document.getElementById('resDownload');
+  const resUp       = document.getElementById('resUpload');
+  const statusEl    = document.getElementById('status');
+  const btnCopyText = document.getElementById('btnCopyText');
+  const btnCopyImg  = document.getElementById('btnCopyImage');
+  const betaRibbon  = document.getElementById('betaRibbon');
+
+  var lastResults = null;
+
+  // Hide the beta ribbon on full release versions (strict X.Y.Z, no suffix).
+  // Anything else — "1.0.0b10", "1.2.3.post.dev4", "dev", commit hash — keeps it.
+  (function() {
+    const versionText = (betaRibbon && document.querySelector('header .version').textContent) || '';
+    const m = versionText.match(/version:\s*(\S+)/);
+    if (m && /^\d+\.\d+\.\d+$/.test(m[1])) {
+      betaRibbon.classList.add('hidden');
+    }
+  })();
 
   // Each gauge element and its sub-parts
   const gauges = ['gaugePing', 'gaugeDown', 'gaugeUp'].map(function(id) {
@@ -436,8 +495,13 @@
       var pingIndex = 0;
       var t0 = 0;
       var ws;
+      var done = false;
+      var safetyTimer;
 
       function finish() {
+        if (done) return;
+        done = true;
+        clearTimeout(safetyTimer);
         try { ws.close(); } catch (e) { /* ignore */ }
         if (latencies.length === 0) {
           resPing.textContent = 'failed';
@@ -450,6 +514,14 @@
         resPing.textContent = fmt.value + ' ' + fmt.unit;
         resPing.className = 'result-value';
         resolve(median);
+      }
+
+      function fallbackToHTTP() {
+        if (done) return;
+        done = true;
+        clearTimeout(safetyTimer);
+        try { ws.close(); } catch (e) { /* ignore */ }
+        resolve(testPingHTTP());
       }
 
       function sendNextPing() {
@@ -465,6 +537,7 @@
         ws = new WebSocket(wsUrl);
       } catch (e) {
         // WebSocket not available — fall back to HTTP ping
+        done = true;
         resolve(testPingHTTP());
         return;
       }
@@ -474,6 +547,7 @@
       };
 
       ws.onmessage = function(event) {
+        if (done) return;
         if (event.data === 'pong') {
           var rtt = performance.now() - t0;
           latencies.push(rtt);
@@ -492,12 +566,17 @@
 
       ws.onerror = function() {
         // WebSocket failed — fall back to HTTP ping
-        resolve(testPingHTTP());
+        fallbackToHTTP();
       };
 
       // Safety timeout in case WebSocket hangs
-      setTimeout(function() {
-        if (pingIndex < PING_COUNT) finish();
+      safetyTimer = setTimeout(function() {
+        if (done) return;
+        if (latencies.length > 0) {
+          finish();
+        } else {
+          fallbackToHTTP();
+        }
       }, 15000);
     });
   }
@@ -550,6 +629,7 @@
       let totalReceived = 0;
       let steadyReceived = 0;   // bytes received after warmup
       let steadyStart = 0;      // timestamp when warmup ended
+      let lastResultUpdate = 0; // throttle result panel text updates
       const t0 = performance.now();
 
       async function downloadStream(idx) {
@@ -587,7 +667,10 @@
               g.number.textContent = fmt.value;
               g.unit.textContent = fmt.unit;
               setGauge(g, Math.min(elapsedMs / durationMs, 1), 'var(--green)');
-              resDown.textContent = fmt.value + ' ' + fmt.unit;
+              if (now - lastResultUpdate >= RESULT_UPDATE_MS) {
+                resDown.textContent = fmt.value + ' ' + fmt.unit;
+                lastResultUpdate = now;
+              }
             }
           }
         } catch (e) {
@@ -635,6 +718,7 @@
       let completedBytes = 0;
       let steadyBytes = 0;
       let steadyStart = 0;
+      let lastResultUpdate = 0; // throttle result panel text updates
       const t0 = performance.now();
 
       // Smoothly advance the gauge arc based on elapsed time, independent of request completions
@@ -679,7 +763,10 @@
             const fmt = formatSpeed(bps);
             g.number.textContent = fmt.value;
             g.unit.textContent = fmt.unit;
-            resUp.textContent = fmt.value + ' ' + fmt.unit;
+            if (now - lastResultUpdate >= RESULT_UPDATE_MS) {
+              resUp.textContent = fmt.value + ' ' + fmt.unit;
+              lastResultUpdate = now;
+            }
           } catch (e) {
             break; // AbortError expected when timer fires
           }
@@ -727,6 +814,9 @@
     resUp.textContent = '\u2014';
     resUp.className = 'result-value pending';
     resetAllGauges();
+    btnCopyText.classList.remove('visible');
+    btnCopyImg.classList.remove('visible');
+    lastResults = null;
 
     // Fetch test duration from server (falls back to default if unavailable)
     let durationMs = TEST_DURATION;
@@ -735,13 +825,265 @@
       if (info.test_duration) durationMs = info.test_duration * 1000;
     } catch (e) { /* use default */ }
 
-    await testPing();
-    await testDownload(durationMs);
-    await testUpload(durationMs);
+    const pingMs = await testPing();
+    const downBps = await testDownload(durationMs);
+    const upBps = await testUpload(durationMs);
+
+    lastResults = {
+      pingMs:  pingMs,
+      downBps: downBps,
+      upBps:   upBps,
+      when:    new Date()
+    };
+    btnCopyText.classList.add('visible');
+    btnCopyImg.classList.add('visible');
 
     statusEl.textContent = 'Test complete';
     btnStart.disabled = false;
     btnStart.textContent = 'Test Again';
+  };
+
+  // -------------------------------------------------------------------------
+  // Copy helpers
+
+  function resultLine(label, raw, formatter, failedText) {
+    if (raw == null) return label + ': ' + (failedText || 'failed');
+    const f = formatter(raw);
+    return label + ': ' + f.value + ' ' + f.unit;
+  }
+
+  function buildResultsText() {
+    if (!lastResults) return '';
+    const title = (document.querySelector('header h1').textContent || 'Speed Test').trim();
+    const version = (document.querySelector('header .version').textContent || '').trim();
+    const ts = lastResults.when.toLocaleString();
+
+    const lines = [];
+    lines.push('Speed Test Results — ' + title);
+    if (version) lines.push(version);
+    lines.push(ts);
+    lines.push('');
+    lines.push(resultLine('Ping    ', lastResults.pingMs,  formatLatency));
+    lines.push(resultLine('Download', lastResults.downBps, formatSpeed));
+    lines.push(resultLine('Upload  ', lastResults.upBps,   formatSpeed));
+    lines.push(''); // trailing LF
+    return lines.join('\n');
+  }
+
+  function flashCopied(btn, label) {
+    const original = btn.textContent;
+    btn.textContent = label || 'Copied!';
+    btn.classList.add('copied');
+    setTimeout(function() {
+      btn.textContent = original;
+      btn.classList.remove('copied');
+    }, 1500);
+  }
+
+  window.copyResultsText = async function() {
+    if (!lastResults) return;
+    const text = buildResultsText();
+    try {
+      await navigator.clipboard.writeText(text);
+      flashCopied(btnCopyText);
+    } catch (e) {
+      // Fallback: use a temporary textarea
+      try {
+        const ta = document.createElement('textarea');
+        ta.value = text;
+        ta.style.position = 'fixed';
+        ta.style.opacity = '0';
+        document.body.appendChild(ta);
+        ta.select();
+        document.execCommand('copy');
+        document.body.removeChild(ta);
+        flashCopied(btnCopyText);
+      } catch (e2) {
+        btnCopyText.textContent = 'Copy failed';
+        setTimeout(function() { btnCopyText.textContent = 'Copy as Text'; }, 1500);
+      }
+    }
+  };
+
+  // Rounded rectangle path helper for canvas drawing
+  function roundRectPath(ctx, x, y, w, h, r) {
+    ctx.beginPath();
+    ctx.moveTo(x + r, y);
+    ctx.arcTo(x + w, y,     x + w, y + h, r);
+    ctx.arcTo(x + w, y + h, x,     y + h, r);
+    ctx.arcTo(x,     y + h, x,     y,     r);
+    ctx.arcTo(x,     y,     x + w, y,     r);
+    ctx.closePath();
+  }
+
+  function formatResultString(raw, formatter) {
+    if (raw == null) return 'failed';
+    const f = formatter(raw);
+    return f.value + ' ' + f.unit;
+  }
+
+  function renderResultsCanvas() {
+    const W = 640;
+    const H = 420;
+    const dpr = Math.min(window.devicePixelRatio || 1, 2);
+    const canvas = document.createElement('canvas');
+    canvas.width = W * dpr;
+    canvas.height = H * dpr;
+    const ctx = canvas.getContext('2d');
+    ctx.scale(dpr, dpr);
+
+    // Background
+    ctx.fillStyle = '#0f1117';
+    ctx.fillRect(0, 0, W, H);
+
+    // Inner card
+    const pad = 24;
+    ctx.fillStyle = '#1a1d27';
+    roundRectPath(ctx, pad, pad, W - pad * 2, H - pad * 2, 14);
+    ctx.fill();
+    ctx.strokeStyle = '#2a2e3d';
+    ctx.lineWidth = 1;
+    ctx.stroke();
+
+    const title = (document.querySelector('header h1').textContent || 'Speed Test').trim();
+    const version = (document.querySelector('header .version').textContent || '').trim();
+    const ts = lastResults.when.toLocaleString();
+    const fontFamily = '-apple-system, BlinkMacSystemFont, "Segoe UI", system-ui, sans-serif';
+
+    // Title
+    ctx.textAlign = 'center';
+    ctx.textBaseline = 'alphabetic';
+    ctx.fillStyle = '#e4e6ef';
+    ctx.font = '600 24px ' + fontFamily;
+    ctx.fillText(title, W / 2, 78);
+
+    // Subtitle
+    ctx.fillStyle = '#6b7394';
+    ctx.font = '13px ' + fontFamily;
+    ctx.fillText('Measure your network performance', W / 2, 100);
+    if (version) {
+      ctx.font = '12px ' + fontFamily;
+      ctx.fillText(version, W / 2, 120);
+    }
+
+    // Result rows
+    const rows = [
+      { label: 'Ping',     text: formatResultString(lastResults.pingMs,  formatLatency), colour: '#6c8cff', glyph: '\u2194' },
+      { label: 'Download', text: formatResultString(lastResults.downBps, formatSpeed),   colour: '#4ade80', glyph: '\u2193' },
+      { label: 'Upload',   text: formatResultString(lastResults.upBps,   formatSpeed),   colour: '#fbbf24', glyph: '\u2191' }
+    ];
+
+    const rowH = 64;
+    const rowX = pad + 28;
+    const rowW = W - (pad + 28) * 2;
+    let rowY = 160;
+
+    rows.forEach(function(r) {
+      // Row background
+      ctx.fillStyle = '#0f1117';
+      roundRectPath(ctx, rowX, rowY, rowW, rowH, 10);
+      ctx.fill();
+
+      // Icon square
+      const iconSize = 40;
+      const iconX = rowX + 14;
+      const iconY = rowY + (rowH - iconSize) / 2;
+      ctx.fillStyle = r.colour + '22'; // ~13% alpha via hex suffix
+      roundRectPath(ctx, iconX, iconY, iconSize, iconSize, 8);
+      ctx.fill();
+      ctx.fillStyle = r.colour;
+      ctx.font = '600 20px ' + fontFamily;
+      ctx.textAlign = 'center';
+      ctx.textBaseline = 'middle';
+      ctx.fillText(r.glyph, iconX + iconSize / 2, iconY + iconSize / 2 + 1);
+
+      // Label
+      ctx.fillStyle = '#6b7394';
+      ctx.font = '14px ' + fontFamily;
+      ctx.textAlign = 'left';
+      ctx.textBaseline = 'middle';
+      ctx.fillText(r.label, iconX + iconSize + 16, rowY + rowH / 2);
+
+      // Value
+      ctx.fillStyle = r.text === 'failed' ? '#f87171' : '#e4e6ef';
+      ctx.font = '600 20px ' + fontFamily;
+      ctx.textAlign = 'right';
+      ctx.fillText(r.text, rowX + rowW - 16, rowY + rowH / 2);
+
+      rowY += rowH + 10;
+    });
+
+    // Timestamp footer
+    ctx.fillStyle = '#6b7394';
+    ctx.font = '11px ' + fontFamily;
+    ctx.textAlign = 'center';
+    ctx.textBaseline = 'alphabetic';
+    ctx.fillText(ts, W / 2, H - pad - 14);
+
+    return canvas;
+  }
+
+  function canvasToBlob(canvas) {
+    return new Promise(function(resolve, reject) {
+      canvas.toBlob(function(b) {
+        if (b) resolve(b);
+        else reject(new Error('toBlob returned null'));
+      }, 'image/png');
+    });
+  }
+
+  function downloadBlob(blob, filename) {
+    const url = URL.createObjectURL(blob);
+    const a = document.createElement('a');
+    a.href = url;
+    a.download = filename;
+    document.body.appendChild(a);
+    a.click();
+    document.body.removeChild(a);
+    URL.revokeObjectURL(url);
+  }
+
+  window.copyResultsImage = async function() {
+    if (!lastResults) return;
+
+    // Render synchronously inside the click handler so the user-gesture chain
+    // is preserved for ClipboardItem.
+    let canvas;
+    try {
+      canvas = renderResultsCanvas();
+    } catch (e) {
+      console.error('render failed', e);
+      btnCopyImg.textContent = 'Copy failed';
+      setTimeout(function() { btnCopyImg.textContent = 'Copy as Image'; }, 1500);
+      return;
+    }
+
+    // Prefer the async clipboard API with a Promise<Blob>. Safari requires this
+    // exact shape: ClipboardItem must be constructed synchronously from the
+    // click, and the blob Promise is awaited by the browser itself.
+    if (navigator.clipboard && window.ClipboardItem) {
+      try {
+        const blobPromise = canvasToBlob(canvas);
+        const item = new ClipboardItem({ 'image/png': blobPromise });
+        await navigator.clipboard.write([item]);
+        flashCopied(btnCopyImg);
+        return;
+      } catch (e) {
+        console.warn('clipboard.write failed, falling back to download', e);
+        // Fall through to the download fallback.
+      }
+    }
+
+    // Fallback: offer the image as a download.
+    try {
+      const blob = await canvasToBlob(canvas);
+      downloadBlob(blob, 'speedtest-results.png');
+      flashCopied(btnCopyImg, 'Downloaded');
+    } catch (e) {
+      console.error('download fallback failed', e);
+      btnCopyImg.textContent = 'Copy failed';
+      setTimeout(function() { btnCopyImg.textContent = 'Copy as Image'; }, 1500);
+    }
   };
 })();
 </script>

@@ -38,6 +38,8 @@ build: check go-build docs
 	uv sync
 	uv run bin2whl -c wheel.json --version-str $(VERSION_STR)
 	cd html && python3 -m zipfile -c ../output/web-speedtest-$(VERSION_STR)-docs.zip .
+	@ln -sf $$(pwd)/dist/web-speedtest-$$(go env GOOS)-$$(go env GOARCH) .venv/bin/web-speedtest
+	@echo "web-speedtest linked into .venv/bin/"
 
 # Publish (requires output/ from make build)
 .PHONY: publish

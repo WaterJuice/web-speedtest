@@ -26,9 +26,10 @@ Starts an HTTP server that serves the web UI and API endpoints. Open the display
 
 The server serves a browser-based speed test at `/`. The UI features:
 
-- A central animated gauge showing real-time measurements
+- Three animated gauges showing real-time ping, download, and upload measurements
 - Automatic progression through ping, download, and upload tests
 - Results displayed in a clean summary panel
+- **Copy as Text** and **Copy as Image** buttons for sharing results — text is plain UTF-8, image is a dark-themed PNG written to the clipboard
 - Dark theme optimised for readability
 
 ### API Endpoints
