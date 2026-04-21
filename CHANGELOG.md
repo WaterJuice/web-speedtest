@@ -1,4 +1,4 @@
-# web-speedtest 1.0.0 Beta 11 — 10 Apr 2026
+# web-speedtest 1.0.0 Beta 12 — 21 Apr 2026
 
 - Initial release
 - Server mode — HTTP server with embedded web UI for browser-based speed testing

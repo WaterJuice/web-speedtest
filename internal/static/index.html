@@ -401,7 +401,7 @@
   const WARMUP_MS        = 2000;              // discard first 2s of data (TCP slow-start)
   const PARALLEL_STREAMS = 6;
   const STREAM_CHUNK     = 100 * 1024 * 1024; // 100 MB per download request (loop until aborted)
-  const UPLOAD_CHUNK     = 256 * 1024;        // 256 KB per upload request (small so requests complete quickly)
+  const UPLOAD_CHUNK     = 16 * 1024 * 1024;  // 16 MB per upload request (bytes tracked via XHR progress)
   const RESULT_UPDATE_MS = 500;               // throttle result panel text updates
 
   const ARC_LENGTH = 251.33;
@@ -727,49 +727,69 @@
         setGauge(g, frac, 'var(--yellow)');
       }, 50);
 
-      // Pre-fill first 64 KB with random data; the rest can be zeroes (it's all opaque bandwidth)
+      // Random fill defeats middlebox compression; crypto.getRandomValues caps at 64 KB per call.
       const payload = new Uint8Array(UPLOAD_CHUNK);
-      crypto.getRandomValues(new Uint8Array(payload.buffer, 0, Math.min(65536, UPLOAD_CHUNK)));
+      for (let offset = 0; offset < UPLOAD_CHUNK; offset += 65536) {
+        const slice = new Uint8Array(payload.buffer, offset, Math.min(65536, UPLOAD_CHUNK - offset));
+        crypto.getRandomValues(slice);
+      }
 
       async function uploadStream() {
-        while (!controller.signal.aborted) {
-          try {
-            await fetch('/api/upload', {
-              method: 'POST',
-              headers: { 'Content-Type': 'application/octet-stream' },
-              body: payload,
-              signal: controller.signal
-            });
-            completedBytes += UPLOAD_CHUNK;
-            const now = performance.now();
-            const elapsedMs = now - t0;
+        var errored = false;
+        while (!controller.signal.aborted && !errored) {
+          await new Promise(function(resolve) {
+            const xhr = new XMLHttpRequest();
+            var lastLoaded = 0;
 
-            // Track steady-state bytes (after warmup)
-            if (elapsedMs >= WARMUP_MS) {
-              if (!steadyStart) steadyStart = now;
-              steadyBytes += UPLOAD_CHUNK;
-            }
+            xhr.upload.onprogress = function(e) {
+              const delta = e.loaded - lastLoaded;
+              lastLoaded = e.loaded;
+              if (delta <= 0) return;
 
-            // Display uses steady-state speed if available
-            var elapsed, bytes;
-            if (steadyStart) {
-              elapsed = (now - steadyStart) / 1000;
-              bytes = steadyBytes;
-            } else {
-              elapsed = elapsedMs / 1000;
-              bytes = completedBytes;
+              const now = performance.now();
+              const elapsedMs = now - t0;
+              completedBytes += delta;
+
+              // Track steady-state bytes (after warmup)
+              if (elapsedMs >= WARMUP_MS) {
+                if (!steadyStart) steadyStart = now;
+                steadyBytes += delta;
+              }
+
+              // Display uses steady-state speed if available
+              var elapsed, bytes;
+              if (steadyStart) {
+                elapsed = (now - steadyStart) / 1000;
+                bytes = steadyBytes;
+              } else {
+                elapsed = elapsedMs / 1000;
+                bytes = completedBytes;
+              }
+              const bps = (bytes * 8) / Math.max(elapsed, 0.001);
+              const fmt = formatSpeed(bps);
+              g.number.textContent = fmt.value;
+              g.unit.textContent = fmt.unit;
+              if (now - lastResultUpdate >= RESULT_UPDATE_MS) {
+                resUp.textContent = fmt.value + ' ' + fmt.unit;
+                lastResultUpdate = now;
+              }
+            };
+
+            function cleanup() {
+              controller.signal.removeEventListener('abort', onAbort);
+              resolve();
             }
-            const bps = (bytes * 8) / Math.max(elapsed, 0.001);
-            const fmt = formatSpeed(bps);
-            g.number.textContent = fmt.value;
-            g.unit.textContent = fmt.unit;
-            if (now - lastResultUpdate >= RESULT_UPDATE_MS) {
-              resUp.textContent = fmt.value + ' ' + fmt.unit;
-              lastResultUpdate = now;
-            }
-          } catch (e) {
-            break; // AbortError expected when timer fires
-          }
+            xhr.onload = cleanup;
+            xhr.onerror = function() { errored = true; cleanup(); };
+            xhr.onabort = cleanup;
+
+            function onAbort() { xhr.abort(); }
+            controller.signal.addEventListener('abort', onAbort);
+
+            xhr.open('POST', '/api/upload');
+            xhr.setRequestHeader('Content-Type', 'application/octet-stream');
+            xhr.send(payload);
+          });
         }
       }
 
