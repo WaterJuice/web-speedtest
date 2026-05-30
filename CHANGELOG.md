@@ -1,3 +1,7 @@
+# web-speedtest 1.0.1 — 30 May 2026
+
+Moved to new GitHub location: https://github.com/WaterJuice/web-speedtest
+
 # web-speedtest 1.0.0 — 23 Apr 2026
 
 - Initial release
